@@ -13,6 +13,7 @@ import {
   wrapInbox,
 } from './crypto'
 import { decodeLink, encodeInvite, encodePair, encodeTicket } from './links'
+import { cleanFileRefs, DEFAULT_BLOSSOM, deleteBlob, downloadFile, encryptFile, FILE_TTL, MAX_FILES_PER_MESSAGE, normalizeServer, safeFileName, uploadBlob, type FileRef } from './files'
 import { RelayPool, type Frame, type RelayInfo } from './relay'
 import {
   DEFAULT_RELAYS,
@@ -68,6 +69,8 @@ export interface EngineOptions {
   /** ms between presence beacons (default 60s) */
   presenceInterval?: number
   limits?: { agentSendPerMinute?: number; humanSendPerMinute?: number; recvPerMinute?: number }
+  /** Blossom servers for attachments, tried in order (default: DEFAULT_BLOSSOM) */
+  blossom?: string[]
 }
 
 export interface RawRecord {
@@ -142,8 +145,11 @@ export class Kurultay extends Emitter<EngineEvents> {
   kind: PeerKind
   card: Card
   appUrl?: string
+  /** Blossom servers for my uploads, tried in order */
+  blossom: string[]
 
   private storage: Storage
+  private lastSweep = 0
   private baseRelays: string[]
   private timers: ReturnType<typeof setInterval>[] = []
   private saveTimer?: ReturnType<typeof setTimeout>
@@ -167,6 +173,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     this.storage = opts.storage ?? new MemoryStorage()
     this.baseRelays = opts.relays?.length ? opts.relays : DEFAULT_RELAYS
     this.appUrl = opts.appUrl
+    this.blossom = opts.blossom?.length ? opts.blossom.map(normalizeServer) : DEFAULT_BLOSSOM
     this.presenceInterval = opts.presenceInterval ?? 60_000
     this.limits = {
       agentSendPerMinute: opts.limits?.agentSendPerMinute ?? 12,
@@ -255,6 +262,49 @@ export class Kurultay extends Emitter<EngineEvents> {
     for (const [id, inv] of Object.entries(this.state.invites)) if (inv.expiresAt < t) delete this.state.invites[id]
     for (const [id, o] of Object.entries(this.state.pairOffers)) if (o.expiresAt < t) delete this.state.pairOffers[id]
     for (const [id, ts] of Object.entries(this.state.seen)) if (ts < t - 1200) delete this.state.seen[id]
+    if (Date.now() - this.lastSweep >= 60_000) void this.sweepUploads()
+  }
+
+  // ------------------------------------------------------------------ files
+
+  /** Encrypt and upload a file for one of my councils. Send the returned FileRef with `send(…, { files })`. */
+  async uploadFile(bytes: Uint8Array, name: string, mime = 'application/octet-stream', opts: { width?: number; height?: number; ttl?: number; signal?: AbortSignal } = {}): Promise<FileRef> {
+    const enc = await encryptFile(bytes)
+    const up = await uploadBlob(this.blossom, enc.blob, enc.sha256, { signal: opts.signal })
+    const expiresAt = now() + (opts.ttl ?? FILE_TTL)
+    const ref: FileRef = { name: safeFileName(name), mime: mime || 'application/octet-stream', size: bytes.length, sha256: enc.sha256, servers: [up.server], key: enc.key, iv: enc.iv, expiresAt, width: opts.width, height: opts.height }
+    ;(this.state.uploads ??= {})[enc.sha256] = { sha256: enc.sha256, servers: [up.server], sk: up.sk, expiresAt, name: ref.name }
+    this.changed('upload')
+    return ref
+  }
+
+  /** Delete an upload right away (e.g. the attachment was removed before sending). */
+  async discardUpload(sha256: string) {
+    const u = this.state.uploads?.[sha256]
+    if (!u) return
+    for (const s of u.servers) await deleteBlob(s, u.sha256, u.sk).catch(() => false)
+    delete this.state.uploads![sha256]
+    this.changed('upload-deleted')
+  }
+
+  /** Download and decrypt an attachment from a message I can read. */
+  downloadFile(ref: FileRef, opts: { signal?: AbortSignal } = {}) {
+    return downloadFile(ref, opts)
+  }
+
+  /** Delete my uploads once they expire (runs whenever this client is online). */
+  async sweepUploads(force = false) {
+    this.lastSweep = Date.now()
+    const t = now()
+    for (const u of Object.values(this.state.uploads ?? {})) {
+      if (!force && u.expiresAt > t) continue
+      const left: string[] = []
+      for (const s of u.servers) if (!(await deleteBlob(s, u.sha256, u.sk).catch(() => false))) left.push(s)
+      // give up a week after expiry: the server is gone or has dropped it
+      if (!left.length || u.expiresAt < t - 7 * 86400) delete this.state.uploads![u.sha256]
+      else u.servers = left
+      this.changed('upload-deleted')
+    }
   }
 
   private persist() {
@@ -361,7 +411,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     switch (env.type) {
       case 'chat': {
         const mentions = (env.mentions ?? []).filter((m) => typeof m === 'string')
-        const msg: Message = { id: inner.id, groupId, from, ts: inner.created_at, type: 'chat', text: String(env.text).slice(0, MAX_TEXT_BYTES), mentions, thread: env.thread }
+        const msg: Message = { id: inner.id, groupId, from, ts: inner.created_at, type: 'chat', text: String(env.text ?? '').slice(0, MAX_TEXT_BYTES), mentions, thread: env.thread, files: cleanFileRefs(env.files) }
         this.record(g, msg, from !== this.pubkey && (g.roster.dm || mentions.includes(this.pubkey) || mentions.includes('all')))
         break
       }
@@ -703,11 +753,14 @@ export class Kurultay extends Emitter<EngineEvents> {
     return g
   }
 
-  async send(groupId: string, text: string, opts: { mentions?: string[]; thread?: string } = {}) {
+  async send(groupId: string, text: string, opts: { mentions?: string[]; thread?: string; files?: FileRef[] } = {}) {
     this.guardSpeech(groupId)
     if (utf8(text).length > MAX_TEXT_BYTES) throw new KurultayError(`Message too large (max ${MAX_TEXT_BYTES} bytes)`)
+    const files = opts.files?.length ? cleanFileRefs(opts.files) : undefined
+    if (opts.files && opts.files.length > MAX_FILES_PER_MESSAGE) throw new KurultayError(`At most ${MAX_FILES_PER_MESSAGE} files per message`)
+    if (!text.trim() && !files) throw new KurultayError('Nothing to send')
     const mentions = this.resolveMentions(groupId, [...(opts.mentions ?? []), ...this.extractMentions(text)])
-    const inner = await this.sendGroup(groupId, { type: 'chat', text, mentions, thread: opts.thread })
+    const inner = await this.sendGroup(groupId, { type: 'chat', text, mentions, thread: opts.thread, files })
     return inner.id
   }
 

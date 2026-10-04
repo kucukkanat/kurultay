@@ -71,6 +71,9 @@ const PATHS: Record<string, string> = {
   key: 'M15.5 7.5a3 3 0 1 1-4.2 4.2M14 9l7-7M18 5l2 2M11.3 11.7L4 19v2h2l1-1h2v-2h2l1.3-1.3',
   back: 'M15 18l-6-6 6-6',
   pencil: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+  clip: 'M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9',
+  file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5',
+  download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
 }
 
 export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {

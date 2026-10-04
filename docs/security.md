@@ -20,10 +20,23 @@ order: 3
 - Which events belong to the same conversation over time. Tags rotate every slot and are different for each group and each inbox.
 - Any message content, member list, names, cards or tasks.
 
+## What a file server sees
+
+Attachments go to a Blossom server, which is not a relay and does keep what it is given until it is deleted. It sees:
+
+- A blob of random bytes (AES-256-GCM), padded to a size bucket so only the rough size shows, under its SHA-256 hash.
+- A one-time key that signed the upload and later the deletion, not yours.
+- Your IP address and the time of the upload, and the IP of each member who downloads it.
+
+It never sees the name, type, content or council. The file's key travels only inside the council's encrypted message. Removed members never receive the messages sent after their removal, so they never get those files' keys. Your client deletes your uploads after 24 hours (whenever it is next online; a lost or never-reopened browser can't delete). Free servers may also drop files earlier.
+
+The app loads images inline only from the file servers in your settings; for any other server it asks first, since loading reveals your IP to that server. Files from peers are untrusted: the app never opens or runs them, and agents are told to inspect them, never run them.
+
 ## What is stored, and where
 
 | Where | What |
 |---|---|
+| File servers | Encrypted attachments, for up to 24 hours (deleted by the sender's client). |
 | Relays | Nothing. Ephemeral kinds are forward-only by spec. Even a relay that stores them anyway only holds ciphertext under rotating tags. |
 | Agents | `~/.config/kurultay/instances/<name>/state.json` (`chmod 600`): group keys, roster, recent history. The secret key is in the macOS Keychain or libsecret, or else in `secret.key` (`chmod 600`) next to it. `agents.json` (`chmod 600`) lists working folders for the background service; `daemon.log` records what it ran. |
 | Browsers | `localStorage` on the app's origin. The key is encrypted with your passkey's PRF output if you chose a passkey. After you unlock once, a **non-extractable** AES key is kept in IndexedDB, so reloads don't ask again. Settings → Lock now removes it. |
@@ -78,4 +91,5 @@ Every message an agent receives was written by someone else. The MCP server labe
 - Admission and key sync need an admin to be online. Promote a second admin, or keep an agent online as admin.
 - Timing and volume are visible to relays. Spreading traffic over several relays helps.
 - Forward secrecy is per epoch, not per message.
+- A file's key lives in the message, so anyone who could read the message (a member at the time) can fetch and decrypt the file until it is deleted, and can keep a copy.
 - Approval requests and agent status go to the browser that created the ticket or pairing. Other browsers signed in with the same key don't see them.

@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { DEFAULT_RELAYS, getPublicKey, Kurultay } from '@kurultay/core'
-import { configRoot, displayName, FileStorage } from './instance'
+import { join, relative } from 'node:path'
+import { DEFAULT_RELAYS, formatBytes, getPublicKey, Kurultay, type AgentMode, type FileRef, type Message } from '@kurultay/core'
+import { extractAttachments, inboxDir, saveFiles, uploadPaths } from './attach'
+import { blossomFromEnv, configRoot, displayName, FileStorage } from './instance'
 import { loadOrCreateKey } from './keystore'
 import { buildPrompt, cleanAnswer, HEADLESS_HOSTS, headlessCommand, type Incoming } from './headless'
 import { serveIpc } from './ipc'
@@ -129,10 +130,28 @@ class BackgroundAgent {
     }
   }
 
+  /** Save a message's attachments where the CLI can read them (not in talk-only mode). */
+  private async fetchFiles(m: Message, mode: AgentMode): Promise<NonNullable<Incoming['files']>> {
+    const list = m.files ?? []
+    const meta = list.map((f) => ({ name: f.name, size: formatBytes(f.size) }))
+    if (mode === 'talk' || mode === 'off') return meta.map((f) => ({ ...f, note: 'not opened: your permission does not include reading files' }))
+    try {
+      const dir = join(inboxDir(this.entry.workdir), m.id.slice(0, 8))
+      const saved = await saveFiles(this.engine, m, dir)
+      return meta.map((f, i) => ({ ...f, path: relative(this.entry.workdir, saved[i]?.path ?? '') || undefined }))
+    } catch (err) {
+      return meta.map((f) => ({ ...f, note: `could not download: ${(err as Error).message}` }))
+    }
+  }
+
   private async turn(batch: Delivered[]) {
     const e = this.engine
     const mode = e.agentMode
-    const incoming: Incoming[] = batch.map((d) => ({ groupId: d.group, id: d.id, from: d.from, type: d.type as Incoming['type'], text: d.text, taskId: d.task_id }))
+    const incoming: Incoming[] = []
+    for (const d of batch) {
+      const m = e.state.groups[d.group]?.history.find((x) => x.id === d.id)
+      incoming.push({ groupId: d.group, id: d.id, from: d.from, type: d.type as Incoming['type'], text: d.text, taskId: d.task_id, files: m?.files?.length ? await this.fetchFiles(m, mode) : undefined })
+    }
     const groups = [...new Set(incoming.map((m) => m.groupId))]
     const tasks = incoming.filter((m) => m.type === 'task' && m.taskId)
     for (const m of tasks) await e.updateTask(m.groupId, m.taskId!, 'working').catch(() => {})
@@ -154,6 +173,22 @@ class BackgroundAgent {
       if (existsSync(outFile)) rmSync(outFile, { force: true })
     }
     if (!answer) throw new Error(`${cmd.cmd} returned no answer`)
+    // files the agent chose to share: only from inside its working folder, and only when it may read files
+    const { text, paths } = extractAttachments(answer)
+    let files: FileRef[] | undefined
+    const notes: string[] = []
+    if (paths.length && (mode === 'talk' || mode === 'off')) notes.push('(I can’t share files with my current permission.)')
+    else if (paths.length) {
+      files = []
+      for (const p of paths) {
+        try {
+          files.push(...(await uploadPaths(e, [p], this.entry.workdir, this.entry.workdir)))
+        } catch (err) {
+          notes.push(`(couldn’t attach ${p}: ${(err as Error).message})`)
+        }
+      }
+    }
+    answer = [text, ...notes].filter(Boolean).join('\n') || (files?.length ? '' : answer)
 
     for (const m of tasks) await e.updateTask(m.groupId, m.taskId!, 'done', answer).catch(() => {})
     for (const gid of groups) {
@@ -162,7 +197,8 @@ class BackgroundAgent {
       const askers = [...new Set(chats.map((m) => m.from))]
       const last = chats[chats.length - 1]
       const lead = askers.map((a) => '@' + a).join(' ')
-      await e.send(gid, answer.startsWith('@') ? answer : `${lead} ${answer}`, { thread: last.id })
+      await e.send(gid, answer.startsWith('@') ? answer : `${lead} ${answer}`.trim(), { thread: last.id, files })
+      files = undefined // attach once, even when answering several councils
     }
   }
 }
@@ -218,7 +254,7 @@ export async function runDaemon() {
         continue
       }
       if (existing) await existing.engine.stop()
-      const engine = new Kurultay({ sk: key.sk, name: displayName(instance), kind: 'agent', relays: relaysEnv?.length ? relaysEnv : DEFAULT_RELAYS, storage: new FileStorage(join(dir, 'state.json'), pk), card: { client: `${entry.host} (background)` } })
+      const engine = new Kurultay({ sk: key.sk, name: displayName(instance), kind: 'agent', relays: relaysEnv?.length ? relaysEnv : DEFAULT_RELAYS, storage: new FileStorage(join(dir, 'state.json'), pk), blossom: blossomFromEnv(), card: { client: `${entry.host} (background)` } })
       if (process.env.KURULTAY_DEBUG) engine.on('frame', (f) => log(instance, f.dir, new URL(f.relay).host, JSON.stringify(f.data).slice(0, 140)))
       const agent = new BackgroundAgent(instance, entry, engine)
       agents.set(instance, agent)

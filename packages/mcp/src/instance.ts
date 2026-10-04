@@ -3,6 +3,9 @@ import { homedir, hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { State, Storage } from '@kurultay/core'
 
+/** Blossom servers for attachments from KURULTAY_BLOSSOM (comma-separated), else the defaults */
+export const blossomFromEnv = () => process.env.KURULTAY_BLOSSOM?.split(',').map((s) => s.trim()).filter(Boolean)
+
 export function configRoot() {
   if (process.env.KURULTAY_HOME) return process.env.KURULTAY_HOME
   const xdg = process.env.XDG_CONFIG_HOME || join(homedir(), '.config')

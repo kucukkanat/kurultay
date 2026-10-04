@@ -3,9 +3,10 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Kurultay, MemoryStorage, newSecretKey } from '@kurultay/core'
-import { startTestRelay } from '@kurultay/core/testing'
+import { startTestBlossom, startTestRelay } from '@kurultay/core/testing'
 
 const relay = startTestRelay(0)
+const blossom = startTestBlossom(0)
 const home = mkdtempSync(join(tmpdir(), 'kurultay-daemon-'))
 const bin = join(home, 'bin')
 const work = join(home, 'project')
@@ -20,18 +21,27 @@ const out = a[a.indexOf('-o') + 1]
 const sandbox = a[a.indexOf('--sandbox') + 1]
 const prompt = a[a.length - 1]
 const sawContext = prompt.includes('the deploy script lives in ops/deploy.sh')
-require('fs').writeFileSync(out, 'sandbox=' + sandbox + ' context=' + sawContext + ' cwd=' + process.cwd())
+const fs = require('fs')
+const saved = prompt.match(/saved at (\\S+)/)
+const file = saved ? ' file=' + fs.readFileSync(saved[1], 'utf8').trim() : ''
+let attach = ''
+if (prompt.includes('please attach')) {
+  fs.writeFileSync('report.txt', 'all green')
+  attach = '\\n[[attach: report.txt]]\\n[[attach: /etc/passwd]]'
+}
+fs.writeFileSync(out, 'sandbox=' + sandbox + ' context=' + sawContext + ' cwd=' + process.cwd() + file + attach)
 `,
 )
 chmodSync(join(bin, 'codex'), 0o755)
 
-const env = { ...process.env, HOME: home, KURULTAY_HOME: join(home, '.config/kurultay'), KURULTAY_NO_KEYCHAIN: '1', KURULTAY_RELAYS: relay.url, KURULTAY_MACHINE: 'testbox', PATH: `${bin}:${process.env.PATH}` }
+const env = { ...process.env, HOME: home, KURULTAY_HOME: join(home, '.config/kurultay'), KURULTAY_NO_KEYCHAIN: '1', KURULTAY_RELAYS: relay.url, KURULTAY_BLOSSOM: blossom.url, KURULTAY_MACHINE: 'testbox', PATH: `${bin}:${process.env.PATH}` }
 let daemon: ReturnType<typeof Bun.spawn> | undefined
 let owner: Kurultay
 afterAll(async () => {
   daemon?.kill()
   await owner?.stop()
   relay.stop()
+  blossom.stop()
 })
 
 const until = async (cond: () => unknown, ms = 10000) => {
@@ -43,7 +53,7 @@ const until = async (cond: () => unknown, ms = 10000) => {
 }
 
 test('background agent answers when tagged, with council context, inside the owner’s permissions', async () => {
-  owner = new Kurultay({ sk: newSecretKey(), name: 'tolga', kind: 'human', relays: [relay.url], storage: new MemoryStorage(), presenceInterval: 3_600_000 })
+  owner = new Kurultay({ sk: newSecretKey(), name: 'tolga', kind: 'human', relays: [relay.url], storage: new MemoryStorage(), presenceInterval: 3_600_000, blossom: [blossom.url] })
   await owner.start()
   const g = owner.createGroup('ops')
   const ticket = owner.createTicket([g.id], { hosts: ['codex'] })
@@ -82,6 +92,19 @@ test('background agent answers when tagged, with council context, inside the own
   await until(() => owner.state.agentStatus?.[agentPk]?.mode === 'edit')
   await owner.send(g.id, '@codex fix it please')
   await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.text.includes('workspace-write')), 15000)
+
+  // files in: saved into the folder for the CLI to read
+  const ref = await owner.uploadFile(new TextEncoder().encode('budget is 42k'), 'budget.txt', 'text/plain')
+  await owner.send(g.id, '@codex what does the attached say?', { files: [ref] })
+  await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.text.includes('file=budget is 42k')), 15000)
+  // files out: [[attach: …]] inside the folder is shared, anything outside is refused
+  await owner.send(g.id, '@codex please attach the report')
+  await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.files?.length), 15000)
+  const withFile = owner.state.groups[g.id].history.findLast((m) => m.from === agentPk && m.files?.length)!
+  expect(withFile.files!.map((f) => f.name)).toEqual(['report.txt'])
+  expect(new TextDecoder().decode(await owner.downloadFile(withFile.files![0]))).toBe('all green')
+  expect(withFile.text).toContain('outside the working folder')
+  expect(withFile.text).not.toContain('[[attach')
 
   // an open CLI session uses the same agent through the daemon (no second identity)
   const { createServer } = await import('../src/server')

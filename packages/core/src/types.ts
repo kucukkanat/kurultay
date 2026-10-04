@@ -1,3 +1,4 @@
+import type { FileRef, UploadRecord } from './files'
 import type { Event as NostrEvent } from 'nostr-tools/pure'
 
 export type { NostrEvent }
@@ -82,6 +83,8 @@ export interface Message {
   mentions?: string[]
   thread?: string
   taskId?: string
+  /** encrypted attachments (see files.ts) */
+  files?: FileRef[]
 }
 
 export interface Invite {
@@ -221,6 +224,8 @@ export interface State {
   agentStatus?: Record<string, AgentStatus>
   /** agent side: settings from my owner */
   agentSettings?: { mode: AgentMode; name?: string; updatedAt: number }
+  /** blobs I uploaded and must delete when they expire */
+  uploads?: Record<string, UploadRecord>
   /** owner: the names I gave my agents */
   agentNames?: Record<string, string>
   seen: Record<string, number>
@@ -252,7 +257,7 @@ export interface PairLink {
 /** Envelope types, carried JSON-encoded in the content of a KIND_INNER event. */
 export type Envelope =
   // group channel
-  | { type: 'chat'; text: string; mentions?: string[]; thread?: string }
+  | { type: 'chat'; text: string; mentions?: string[]; thread?: string; files?: FileRef[] }
   | { type: 'typing'; on: boolean }
   | { type: 'task'; taskId: string; to: string; title: string; input?: string }
   | { type: 'task_update'; taskId: string; status: TaskStatus; output?: string }

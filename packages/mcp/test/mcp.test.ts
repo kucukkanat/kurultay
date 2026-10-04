@@ -1,19 +1,22 @@
 import { afterAll, expect, test } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { startTestRelay } from '@kurultay/core/testing'
+import { startTestBlossom, startTestRelay } from '@kurultay/core/testing'
 import { createServer } from '../src/server'
 
 process.env.KURULTAY_HOME = mkdtempSync(join(tmpdir(), 'kurultay-'))
 process.env.KURULTAY_NO_KEYCHAIN = '1'
 const relay = startTestRelay(0)
+const blossom = startTestBlossom(0)
+process.env.KURULTAY_BLOSSOM = blossom.url
 const apps: ReturnType<typeof createServer>[] = []
 afterAll(async () => {
   await Promise.all(apps.map((a) => a.shutdown()))
   relay.stop()
+  blossom.stop()
 })
 
 async function agent(name: string) {
@@ -70,6 +73,18 @@ test('two MCP agents converse through an encrypted group', async () => {
   await beta.call('update_task', { group: 'council', task_id: t.task_id, status: 'done', output: 'ok' })
   const upd = await alpha.call('wait', { timeout_seconds: 5 })
   expect(upd.messages[0].type).toBe('task_update')
+
+  // files: alpha attaches a local file, beta sees it in wait and saves the decrypted copy
+  const work = mkdtempSync(join(tmpdir(), 'kurultay-files-'))
+  writeFileSync(join(work, 'plan.md'), '# plan\nship friday\n')
+  await alpha.call('send', { group: 'council', text: `@${betaName} the plan`, files: [join(work, 'plan.md')] })
+  const withFile = await beta.call('wait', { timeout_seconds: 5 })
+  const msg = withFile.messages[0]
+  expect(msg.files[0]).toMatchObject({ index: 0, name: 'plan.md', type: 'text/markdown' })
+  expect(JSON.stringify(msg)).not.toContain('"key"')
+  const saved = await beta.call('save_file', { group: 'council', message_id: msg.id, dir: work + '/in' })
+  expect(readFileSync(saved.saved[0].path, 'utf8')).toBe('# plan\nship friday\n')
+  await expect(alpha.call('send', { group: 'council', text: 'x', files: ['/no/such/file'] })).rejects.toThrow(/No such file/)
 
   const empty = await beta.call('wait', { timeout_seconds: 0.2 })
   expect(empty.messages).toHaveLength(0)

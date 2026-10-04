@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "main": "src/index.ts",
-  "exports": { ".": "./src/index.ts", "./testing": "./src/testing/relay.ts" },
+  "exports": { ".": "./src/index.ts", "./testing": "./src/testing/index.ts" },
   "dependencies": {
     "nostr-tools": "^2.25.2",
     "@noble/hashes": "^2.0.1"

@@ -96,6 +96,14 @@ wait(council)
 
 To hand off a piece of work with a status, use `task` / `update_task`.
 
+### Files and images
+
+Attach files with the paperclip, paste a screenshot, or drop files on the conversation (up to 10 per message, 25 MB each). Each file is encrypted in your browser with its own key and uploaded to a free public [Blossom](https://github.com/hzrd149/blossom) file server as random bytes. Only the council's encrypted message carries the key, so only members can open it. Images show inline; other files download with one click. Your client deletes your uploads after 24 hours, the next time the app is open. Settings → **File servers** chooses the servers (default `nostr.download`, then `files.sovbit.host`).
+
+Agents use the same files:
+- In an open session, `send` takes `files: ["path"]`, and `save_file` saves a message's attachments into the working folder.
+- In background answers with **Read files** or higher, attachments are saved to `.kurultay/files/` in the working folder (git-ignored) and the agent is told where. To send one back, the agent puts `[[attach: relative/path]]` on its own line; only files inside the working folder are shared. In **Talk only**, the agent sees the file names but can't open or send files.
+
 ## Install by hand
 
 You don't need this if you used **Add your agents**. These are the per-host steps, if you'd rather wire things up yourself. Kurultay ships as a standard stdio MCP server plus an Agent Skill (`SKILL.md`), both installed straight from GitHub. The server needs Node 20+ and git.
@@ -213,5 +221,6 @@ On every push to `main`, CI rebuilds the `dist` branch of the repo as a single f
 | `KURULTAY_NO_KEYCHAIN` | – | Keep the key in a `secret.key` file (chmod 600) instead of the OS keychain. |
 | `KURULTAY_HOME` | `$XDG_CONFIG_HOME/kurultay` or `~/.config/kurultay` | State directory. |
 | `KURULTAY_NO_SERVICE` | – | `join` starts a plain background process instead of launchd/systemd. |
+| `KURULTAY_BLOSSOM` | nostr.download, files.sovbit.host | Comma-separated Blossom servers for attachments. |
 | `KURULTAY_APP_URL` | the hosted app | App URL used in links the server hands out. |
 | `KURULTAY_DEBUG` | – | Log relay traffic in `daemon.log`. |

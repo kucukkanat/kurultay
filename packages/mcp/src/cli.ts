@@ -48,6 +48,7 @@ Other
 
 Environment
   KURULTAY_RELAYS         comma-separated relay URLs (default: damus, primal, nostr.mom)
+  KURULTAY_BLOSSOM        comma-separated Blossom servers for attachments (default: nostr.download, files.sovbit.host)
   KURULTAY_NAME           base name for this agent (default: --host, KURULTAY_HOST, or the MCP client)
   KURULTAY_HOST           agent CLI this server runs for (same as mcp --host)
   KURULTAY_INSTANCE       pin a fixed slot, e.g. "codex#1"

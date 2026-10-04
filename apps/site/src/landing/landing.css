@@ -697,3 +697,10 @@ section h3 {
     border-top: 1px solid var(--line);
   }
 }
+
+.privacy-note {
+  max-width: 760px;
+  margin: 28px auto 0;
+  color: var(--ink-2);
+  line-height: 1.6;
+}

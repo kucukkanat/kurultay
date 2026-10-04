@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { decodeLink, shortKey, type GroupState, type Kurultay, type Message, type Task } from '@kurultay/core'
-import { appUrl, devMode, getRelays, markRead, setDevMode, setRelaysPref, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
+import { appUrl, devMode, getBlossom, getRelays, markRead, setBlossomPref, setDevMode, setRelaysPref, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
 import { Avatar, CopyField, Icon, Modal, Rich, timeOf } from './ui'
+import { Attachments, filesFrom, PendingChips, usePendingFiles, type PendingFiles } from './files'
 import { DevDrawer } from './Dev'
 import { AddAgentDialog, AgentsList, MODES, myAgents } from './agents'
 import { forgetIdentity, loadIdentity, lockIdentity, nsecOf, renameIdentity } from './identity'
@@ -178,6 +179,10 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
     .filter(([pk, until]) => until > Date.now() && pk !== e.pubkey)
     .map(([pk]) => e.displayName(g.id, pk))
   const dmPeer = g.roster.dm ? members.find((m) => !m.isMe) : undefined
+  const pending = usePendingFiles(e)
+  const [dragging, setDragging] = useState(false)
+  // attachments belong to the council they were added in
+  useEffect(() => () => pending.items.forEach((p) => pending.remove(p.id)), [g.id])
 
   useEffect(() => {
     markRead(g.id)
@@ -190,7 +195,24 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
 
   return (
     <div class={`group-view ${membersOpen ? 'members-open' : ''}`}>
-      <div class="conversation">
+      <div
+        class={`conversation ${dragging ? 'dragging' : ''}`}
+        onDragOver={(ev) => {
+          if (!ev.dataTransfer?.types.includes('Files')) return
+          ev.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={(ev) => {
+          if (!(ev.currentTarget as HTMLElement).contains(ev.relatedTarget as Node)) setDragging(false)
+        }}
+        onDrop={(ev) => {
+          if (!ev.dataTransfer?.files.length) return
+          ev.preventDefault()
+          setDragging(false)
+          pending.add(filesFrom(ev.dataTransfer))
+        }}
+      >
+        {dragging && <div class="drop-hint">Drop to attach. Files are encrypted for this council only.</div>}
         <TopBar title={(dmPeer ? '@' : '#') + title} sub={sub} openNav={openNav}>
           {isAdmin && !g.roster.dm && (
             <button class="btn small ghost" onClick={() => e.moderate(g.id, g.roster.paused ? 'resume' : 'pause').catch((x) => toast(x.message, 'error'))} title={g.roster.paused ? 'Let agents speak again' : 'Stop all agents from speaking'}>
@@ -228,7 +250,7 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
           </div>
         </div>
         <div class="typing-line">{typers.length ? `${typers.join(', ')} ${typers.length > 1 ? 'are' : 'is'} thinking…` : ''}</div>
-        <Composer e={e} g={g} />
+        <Composer e={e} g={g} pending={pending} />
       </div>
       {membersOpen && <MembersPanel e={e} g={g} close={toggleMembers} go={go} />}
     </div>
@@ -269,16 +291,19 @@ function MessageRow({ e, g, m, prev, names }: { e: Kurultay; g: GroupState; m: M
         )}
         {parent && (
           <div class="reply-to">
-            ↳ {e.displayName(g.id, parent.from)}: {parent.text.slice(0, 80)}
+            ↳ {e.displayName(g.id, parent.from)}: {parent.text.slice(0, 80) || (parent.files ?? []).map((f) => f.name).join(", ")}
           </div>
         )}
         {m.type === 'task' && m.taskId && g.tasks[m.taskId] ? (
           <TaskCard e={e} g={g} t={g.tasks[m.taskId]} />
         ) : (
-          <div class="msg-text">
-            <Rich text={m.text} names={names} />
-          </div>
+          m.text && (
+            <div class="msg-text">
+              <Rich text={m.text} names={names} />
+            </div>
+          )
         )}
+        {m.files && <Attachments e={e} files={m.files} />}
       </div>
     </div>
   )
@@ -352,7 +377,8 @@ function TaskCard({ e, g, t }: { e: Kurultay; g: GroupState; t: Task }) {
   )
 }
 
-function Composer({ e, g }: { e: Kurultay; g: GroupState }) {
+function Composer({ e, g, pending }: { e: Kurultay; g: GroupState; pending: PendingFiles }) {
+  const picker = useRef<HTMLInputElement>(null)
   const [text, setText] = useState('')
   const [mode, setMode] = useState<'chat' | 'task'>('chat')
   const [assignee, setAssignee] = useState('')
@@ -389,7 +415,9 @@ function Composer({ e, g }: { e: Kurultay; g: GroupState }) {
 
   const submit = async () => {
     const body = text.trim()
-    if (!body) return
+    const files = mode === 'chat' ? pending.refs : []
+    if (!body && !files.length) return
+    if (pending.busy) return toast('Still uploading. It sends when you press again after the upload finishes.', 'info')
     try {
       if (mode === 'task') {
         if (!assignee) return toast('Choose who the task is for', 'warn')
@@ -397,7 +425,8 @@ function Composer({ e, g }: { e: Kurultay; g: GroupState }) {
         await e.sendTask(g.id, assignee, title.trim(), rest.join('\n').trim() || undefined)
         setMode('chat')
       } else {
-        await e.send(g.id, body)
+        await e.send(g.id, body, { files })
+        pending.clear()
       }
       setText('')
       if (ta.current) ta.current.style.height = 'auto'
@@ -442,6 +471,7 @@ function Composer({ e, g }: { e: Kurultay; g: GroupState }) {
 
   return (
     <div class="composer">
+      {mode === 'chat' && <PendingChips pending={pending} />}
       {suggest && matches.length > 0 && (
         <ul class="suggest" role="listbox">
           {matches.map((n, i) => (
@@ -470,8 +500,38 @@ function Composer({ e, g }: { e: Kurultay; g: GroupState }) {
         <button class={`icon-btn ${mode === 'task' ? 'on' : ''}`} onClick={() => setMode(mode === 'task' ? 'chat' : 'task')} aria-pressed={mode === 'task'} title="Assign a task">
           <Icon name="task" />
         </button>
-        <textarea ref={ta} rows={1} value={text} onInput={(ev) => onInput((ev.target as HTMLTextAreaElement).value)} onKeyDown={onKey} placeholder={mode === 'task' ? 'Describe the task' : g.roster.dm ? 'Message' : 'Message, or @mention an agent'} aria-label="Message" />
-        <button class="btn primary send" onClick={submit} disabled={!text.trim()} aria-label="Send">
+        {mode === 'chat' && (
+          <>
+            <button class="icon-btn" onClick={() => picker.current?.click()} title="Attach files (encrypted for this council)" aria-label="Attach files">
+              <Icon name="clip" />
+            </button>
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              hidden
+              onChange={(ev) => {
+                const input = ev.target as HTMLInputElement
+                pending.add([...(input.files ?? [])])
+                input.value = ''
+              }}
+            />
+          </>
+        )}
+        <textarea
+          ref={ta}
+          rows={1}
+          value={text}
+          onPaste={(ev) => {
+            const files = filesFrom(ev.clipboardData)
+            if (!files.length || mode !== 'chat') return
+            ev.preventDefault()
+            pending.add(files)
+          }}
+          onInput={(ev) => onInput((ev.target as HTMLTextAreaElement).value)}
+          onKeyDown={onKey}
+          placeholder={mode === 'task' ? 'Describe the task' : g.roster.dm ? 'Message' : 'Message, or @mention an agent'} aria-label="Message" />
+        <button class="btn primary send" onClick={submit} disabled={(!text.trim() && !pending.refs.length) || pending.busy} aria-label="Send" title={pending.busy ? 'Uploading…' : 'Send'}>
           <Icon name="send" />
         </button>
       </div>
@@ -722,6 +782,7 @@ function ApprovalsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
 
 function SettingsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
   const [relays, setRelays] = useState(getRelays().join('\n'))
+  const [blossom, setBlossom] = useState(getBlossom().join('\n'))
   const [reveal, setReveal] = useState(false)
   const [forget, setForget] = useState(false)
   const [name, setName] = useState(e.name)
@@ -766,6 +827,34 @@ function SettingsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
             }}
           >
             Save relays
+          </button>
+        </section>
+
+        <section class="block">
+          <h2>File servers</h2>
+          <p class="muted">
+            Attachments are encrypted in this browser with a key only the council receives, then stored on a Blossom server, which sees random bytes from a throwaway key. Your
+            uploads are deleted after 24 hours (when this app is next open). Servers are tried in order.
+          </p>
+          <label class="field">
+            <span class="field-label">Blossom server URLs, one per line</span>
+            <textarea class="input mono" rows={3} value={blossom} onInput={(ev) => setBlossom((ev.target as HTMLTextAreaElement).value)} />
+          </label>
+          <button
+            class="btn small"
+            onClick={() => {
+              const list = blossom
+                .split(/\s+/)
+                .map((s) => s.trim().replace(/\/+$/, ''))
+                .filter((s) => /^https:\/\/[^/\s]+$/.test(s) || /^http:\/\/localhost(:\d+)?$/.test(s))
+              if (!list.length) return toast('Add at least one https:// server', 'warn')
+              setBlossomPref(list)
+              e.blossom = list
+              setBlossom(list.join('\n'))
+              toast('File servers saved')
+            }}
+          >
+            Save file servers
           </button>
         </section>
 

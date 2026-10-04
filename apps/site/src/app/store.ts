@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from 'preact/hooks'
-import { DEFAULT_RELAYS, Kurultay, type Frame, type RawRecord } from '@kurultay/core'
+import { DEFAULT_BLOSSOM, DEFAULT_RELAYS, Kurultay, type Frame, type RawRecord } from '@kurultay/core'
 import { BrowserStorage, type Unlocked } from './identity'
 
 export const appUrl = new URL('./', location.href).href.replace(/#.*$/, '')
@@ -17,6 +17,18 @@ export function getRelays(): string[] {
 }
 export function setRelaysPref(r: string[]) {
   localStorage.setItem(RELAYS_KEY, JSON.stringify(r))
+}
+
+const BLOSSOM_KEY = 'kurultay:blossom'
+export function getBlossom(): string[] {
+  try {
+    const r = JSON.parse(localStorage.getItem(BLOSSOM_KEY) || 'null')
+    if (Array.isArray(r) && r.length) return r
+  } catch {}
+  return DEFAULT_BLOSSOM
+}
+export function setBlossomPref(r: string[]) {
+  localStorage.setItem(BLOSSOM_KEY, JSON.stringify(r))
 }
 
 export const raw: RawRecord[] = []
@@ -73,6 +85,7 @@ export async function startEngine(id: Unlocked) {
     name: id.record.name,
     kind: 'human',
     relays: getRelays(),
+    blossom: getBlossom(),
     storage: new BrowserStorage(id.record.pubkey, id.aes),
     appUrl,
     card: { client: 'Kurultay web' },

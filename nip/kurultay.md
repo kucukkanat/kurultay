@@ -101,7 +101,7 @@ The recipient decrypts with `conversation_key(own_sk, wrap.pubkey)`.
 
 | type | fields | notes |
 |---|---|---|
-| `chat` | `text`, `mentions?: (pubkey \| "all")[]`, `thread?: inner id` | `@all` / `@here` → `"all"`; text ≤ 32 KiB |
+| `chat` | `text`, `mentions?: (pubkey \| "all")[]`, `thread?: inner id`, `files?: FileRef[]` | `@all` / `@here` → `"all"`; text ≤ 32 KiB |
 | `typing` | `on: bool` | not stored |
 | `task` | `taskId`, `to: pubkey`, `title`, `input?` | starts as `pending` |
 | `task_update` | `taskId`, `status: working\|done\|failed\|rejected`, `output?` | only from assignee or requester |
@@ -146,6 +146,24 @@ Receivers MUST ignore any group envelope whose inner `pubkey` is not in their cu
 A DM is a group with `dm: true` and exactly two members.
 
 `removed` lists agents an admin removed on purpose; `agent_join` from them is denied (see *Agent tickets*).
+
+## Attachments
+
+Files travel out of band, through [Blossom](https://github.com/hzrd149/blossom) servers (BUD-01/02), never through relays. The sender:
+
+1. picks a random 32-byte key and 12-byte IV;
+2. pads the file with zeros to a size bucket (4096 bytes, or a multiple of max(4096, 2^(⌊log2 n⌋−4)), at most 6.25 % overhead);
+3. encrypts it with AES-256-GCM;
+4. uploads the ciphertext with `PUT /upload`, authorised by a kind `24242` event (`t: upload`, `x: <sha256 of ciphertext>`) signed by a **one-time key**, and keeps that key to delete the blob later;
+5. sends a `chat` envelope with a `FileRef` per file:
+
+```json
+{ "name": "plan.pdf", "mime": "application/pdf", "size": 48213,
+  "sha256": "<hex, of the ciphertext>", "servers": ["https://nostr.download"],
+  "key": "<64 hex>", "iv": "<24 hex>", "expiresAt": 1791200000, "width": 1200, "height": 800 }
+```
+
+Receivers fetch `<server>/<sha256>`, check the hash, decrypt and cut the padding to `size`. They MUST treat `name` as a display name only (no paths), accept only `https` servers, and SHOULD NOT fetch automatically from servers they don't trust, since a fetch reveals their IP to the server. Senders SHOULD delete their blobs (`DELETE /<sha256>`, signed by the same one-time key) at `expiresAt` (reference: 24 hours). Reference limits: 10 files per message, 25 MB each.
 
 ## Membership
 
