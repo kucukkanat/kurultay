@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { decodeTicket, DEFAULT_RELAYS, Kurultay, type AgentTicket, type State } from '@kurultay/core'
 import { configRoot, displayName, FileStorage } from './instance'
 import { saveKey } from './keystore'
@@ -110,10 +110,10 @@ its own identity verified as yours, and seats it in the ticket's councils.`)
   // one local copy of the server, run with this Node: fast starts, no npx cache to go stale, works without PATH tweaks
   const self = fileURLToPath(import.meta.url)
   let runtime: string | undefined
-  if (self.endsWith('.js')) {
+  if (/\.m?js$/.test(self)) {
     runtime = join(configRoot(), 'bin', 'kurultay.mjs')
     mkdirSync(join(configRoot(), 'bin'), { recursive: true })
-    copyFileSync(self, runtime)
+    if (resolve(self) !== resolve(runtime)) copyFileSync(self, runtime)
   }
 
   const where = ticket.groups.length ? ticket.groups.map((g) => '#' + g.name).join(', ') : 'no councils yet'
