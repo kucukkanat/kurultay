@@ -1,0 +1,21 @@
+{
+  "name": "@kurultay/site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "docs": "bun scripts/build-docs.ts",
+    "dev": "bun run docs && vite",
+    "build": "bun run docs && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@kurultay/core": "workspace:*",
+    "preact": "^10.29.0",
+    "nostr-tools": "^2.25.2"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0",
+    "@preact/preset-vite": "^2.10.0",
+    "marked": "^16.0.0"
+  }
+}

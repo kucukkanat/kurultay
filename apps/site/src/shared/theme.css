@@ -1,0 +1,198 @@
+/* Kurultay — steppe council theme. Felt, ochre and madder by day; embers by night. */
+:root {
+  --felt: #f3eadb;
+  --felt-2: #eadfcb;
+  --paper: #fbf6ec;
+  --ink: #2a1e17;
+  --ink-2: #5d4b3e;
+  --ink-3: #8a7765;
+  --ochre: #c8872e;
+  --ochre-ink: #8a5a17;
+  --madder: #8e2c1f;
+  --indigo: #2f4b6e;
+  --sage: #4f6b48;
+  --line: rgba(42, 30, 23, 0.14);
+  --line-2: rgba(42, 30, 23, 0.26);
+  --shadow: 0 1px 0 rgba(42, 30, 23, 0.06), 0 8px 24px -12px rgba(42, 30, 23, 0.25);
+  --code-bg: #2a1e17;
+  --code-ink: #f3e6cf;
+  --fire-1: #ffd27a;
+  --fire-2: #e8892c;
+  --fire-3: #a8361d;
+
+  --serif: 'Fraunces', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --r-1: 4px;
+  --r-2: 10px;
+  --r-3: 18px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --felt: #18110c;
+    --felt-2: #120c08;
+    --paper: #22180f;
+    --ink: #f0e4d0;
+    --ink-2: #c3b098;
+    --ink-3: #8f7c66;
+    --ochre: #e3a14a;
+    --ochre-ink: #ebb366;
+    --madder: #d6634a;
+    --indigo: #93b3d6;
+    --sage: #9cbb92;
+    --line: rgba(240, 228, 208, 0.12);
+    --line-2: rgba(240, 228, 208, 0.24);
+    --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 32px -14px rgba(0, 0, 0, 0.7);
+    --code-bg: #0e0906;
+    --code-ink: #f0e4d0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --felt: #18110c;
+  --felt-2: #120c08;
+  --paper: #22180f;
+  --ink: #f0e4d0;
+  --ink-2: #c3b098;
+  --ink-3: #8f7c66;
+  --ochre: #e3a14a;
+  --ochre-ink: #ebb366;
+  --madder: #d6634a;
+  --indigo: #93b3d6;
+  --sage: #9cbb92;
+  --line: rgba(240, 228, 208, 0.12);
+  --line-2: rgba(240, 228, 208, 0.24);
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 32px -14px rgba(0, 0, 0, 0.7);
+  --code-bg: #0e0906;
+  --code-ink: #f0e4d0;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--felt);
+  color: var(--ink);
+  font: 400 16px/1.6 var(--sans);
+  font-feature-settings: 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: var(--ochre-ink);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+a:hover {
+  color: var(--madder);
+}
+:focus-visible {
+  outline: 2px solid var(--ochre);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+code,
+pre,
+kbd {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+::selection {
+  background: color-mix(in srgb, var(--ochre) 35%, transparent);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  font: 500 15px/1 var(--sans);
+  padding: 0.75em 1.15em;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+.btn:hover {
+  border-color: var(--ink-2);
+  color: var(--ink);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background: var(--madder);
+  border-color: var(--madder);
+  color: #fbf3e6;
+}
+.btn.primary:hover {
+  background: color-mix(in srgb, var(--madder) 88%, black);
+  color: #fff;
+}
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.btn.ghost:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.btn.small {
+  font-size: 13px;
+  padding: 0.5em 0.85em;
+}
+
+/* Kilim band: a woven divider, used only between major movements of a page */
+.kilim {
+  height: 22px;
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='22' viewBox='0 0 44 22'%3E%3Cpath d='M0 11 L11 0 L22 11 L11 22Z' fill='%23c8872e'/%3E%3Cpath d='M22 11 L33 0 L44 11 L33 22Z' fill='%238e2c1f'/%3E%3Cpath d='M7 11 L11 7 L15 11 L11 15Z' fill='%23f3eadb'/%3E%3Cpath d='M29 11 L33 7 L37 11 L33 15Z' fill='%23f3eadb'/%3E%3Cpath d='M20 11h4' stroke='%232a1e17' stroke-width='2'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: center;
+  opacity: 0.9;
+}
+:root[data-theme='dark'] .kilim {
+  filter: brightness(0.9) saturate(1.1);
+}
+
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
