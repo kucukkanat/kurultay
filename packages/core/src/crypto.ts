@@ -128,6 +128,19 @@ export function attest(ownerSk: Uint8Array, agentPk: string, label: string, owne
   )
 }
 
+/** Owner certifies several agent keys at once (one per host type of an agent ticket). */
+export function attestMany(ownerSk: Uint8Array, agents: { pk: string; label: string }[], ownerName: string): NostrEvent {
+  return finalizeEvent(
+    {
+      kind: KIND_ATTESTATION,
+      created_at: now(),
+      tags: [...agents.map((a) => ['p', a.pk, a.label]), ['name', ownerName]],
+      content: 'kurultay agent attestation',
+    },
+    ownerSk,
+  )
+}
+
 export function checkAttestation(att: NostrEvent | undefined, agentPk: string): { owner: string; label: string; ownerName: string } | null {
   if (!att || att.kind !== KIND_ATTESTATION) return null
   try {
@@ -135,11 +148,17 @@ export function checkAttestation(att: NostrEvent | undefined, agentPk: string): 
   } catch {
     return null
   }
-  const p = att.tags.find((t) => t[0] === 'p')?.[1]
-  if (p !== agentPk) return null
+  const p = att.tags.find((t) => t[0] === 'p' && t[1] === agentPk)
+  if (!p) return null
   return {
     owner: att.pubkey,
-    label: att.tags.find((t) => t[0] === 'label')?.[1] ?? '',
+    label: p[2] || att.tags.find((t) => t[0] === 'label')?.[1] || '',
     ownerName: att.tags.find((t) => t[0] === 'name')?.[1] ?? '',
   }
+}
+
+/** Deterministic per-host agent identity from a ticket seed. */
+export function deriveAgent(seedHex: string, host: string): { sk: Uint8Array; pk: string; inbox: string } {
+  const sk = derive(seedHex, `agent/${host}/key`)
+  return { sk, pk: getPublicKey(sk), inbox: bytesToHex(derive(seedHex, `agent/${host}/inbox`)) }
 }

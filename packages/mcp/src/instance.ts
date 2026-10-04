@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
 import type { State, Storage } from '@kurultay/core'
 
@@ -75,4 +75,29 @@ export class FileStorage implements Storage {
       chmodSync(this.file, 0o600)
     } catch {}
   }
+}
+
+/** Map an MCP client name (from initialize) to a Kurultay host type, so plugin installs find their ticket identity. */
+export function hostFromClient(name?: string): string | undefined {
+  const n = (name || '').toLowerCase()
+  if (!n) return undefined
+  if (n.includes('claude')) return 'claude'
+  if (n.includes('codex')) return 'codex'
+  if (n.includes('copilot')) return 'copilot'
+  if (n.includes('opencode')) return 'opencode'
+  if (n.includes('cursor')) return 'cursor'
+  if (n.includes('gemini')) return 'gemini'
+  if (n.includes('visual studio') || n.includes('vscode')) return 'vscode'
+  if (n === 'pi' || n.startsWith('pi-') || n.startsWith('pi ') || n.includes('pi-coding')) return 'pi'
+  return undefined
+}
+
+/** Short machine name used in agent display names, e.g. "codex@tolga-mbp". */
+export function machineName() {
+  return sanitize(process.env.KURULTAY_MACHINE || hostname().split('.')[0]).slice(0, 20) || 'machine'
+}
+
+/** "claude#1" → "claude@tolga-mbp", "claude#2" → "claude#2@tolga-mbp" */
+export function displayName(instanceName: string) {
+  return instanceName.replace(/#1$/, '') + '@' + machineName()
 }

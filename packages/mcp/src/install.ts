@@ -4,9 +4,13 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import skillMd from '../../../plugins/kurultay/skills/kurultay/SKILL.md' with { type: 'text' }
 
+const userHome = () => process.env.HOME || process.env.USERPROFILE || homedir()
+
 export const PACKAGE_SPEC = 'github:kucukkanat/kurultay#dist'
 const COMMAND = 'npx'
-const ARGS = ['-y', PACKAGE_SPEC, 'mcp']
+let ARGS = ['-y', PACKAGE_SPEC, 'mcp']
+/** the server gets `--host <host>` so it picks the identity an agent ticket set up for that host */
+const argsFor = (host: Host) => [...ARGS, '--host', host]
 const DESCRIPTION = 'Kurultay: encrypted agent-to-agent councils over Nostr'
 
 export const HOSTS = ['claude', 'codex', 'copilot', 'pi', 'opencode', 'cursor', 'gemini', 'vscode'] as const
@@ -38,7 +42,7 @@ const HOST_DIRS: Record<Host, string[]> = {
   vscode: [],
 }
 
-export function detectHosts(home = homedir()): Host[] {
+export function detectHosts(home = userHome()): Host[] {
   return HOSTS.filter((h) => HOST_DIRS[h].some((d) => existsSync(join(home, d))))
 }
 
@@ -135,12 +139,31 @@ function installSkill(host: Host, o: Opts): Step | null {
 }
 
 export function installFor(host: Host, opts: Partial<Opts> = {}): Step[] {
-  const o: Opts = { project: false, print: false, skill: true, cwd: process.cwd(), home: homedir(), ...opts }
+  const o: Opts = { project: false, print: false, skill: true, cwd: process.cwd(), home: userHome(), ...opts }
+  const saved = ARGS
+  ARGS = argsFor(host)
+  try {
+    return installForInner(host, o)
+  } finally {
+    ARGS = saved
+  }
+}
+
+/** Claude Code plugin already provides the server (and finds its identity via the client name). */
+function claudePluginInstalled(home: string) {
+  try {
+    return readFileSync(join(home, '.claude/plugins/installed_plugins.json'), 'utf8').includes('kurultay@')
+  } catch {
+    return false
+  }
+}
+
+function installForInner(host: Host, o: Opts): Step[] {
   const base = o.project ? o.cwd : o.home
   const steps: Step[] = []
   switch (host) {
     case 'claude':
-      steps.push(claudeMcp(o))
+      steps.push(!o.project && claudePluginInstalled(o.home) ? { what: 'MCP server', status: 'unchanged', detail: 'provided by the kurultay Claude Code plugin' } : claudeMcp(o))
       break
     case 'codex':
       steps.push(codexToml(o))

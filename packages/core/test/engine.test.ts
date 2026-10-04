@@ -176,3 +176,58 @@ describe('engine', () => {
     expect(got[0]).toBe(true)
   })
 })
+
+describe('agent tickets', () => {
+  async function agentFromTicket(ticket: string, host: string, name: string) {
+    const { decodeTicket } = await import('../src/links')
+    const t = decodeTicket(ticket)
+    const { sk, state } = Kurultay.fromTicket(t, host)
+    const storage = new MemoryStorage()
+    storage.save(state)
+    const p = new Kurultay({ sk, name, kind: 'agent', relays: [relay.url], storage, presenceInterval: 3_600_000 })
+    peers.push(p)
+    await p.start()
+    return p
+  }
+
+  test('owner who is admin: one ticket seats the agent, verified, without approvals', async () => {
+    const tolga = await peer('tolga', 'human')
+    const g = tolga.createGroup('ops-council')
+    const ticket = tolga.createTicket([g.id])
+    expect(ticket.startsWith('kurultay:')).toBe(true)
+    const cc = await agentFromTicket(ticket, 'claude', 'claude@laptop')
+    await until(() => cc.state.groups[g.id])
+    expect(Object.keys(tolga.state.approvals)).toHaveLength(0)
+    const v = tolga.member(g.id, cc.pubkey)!
+    expect(v.verified?.ownerName).toBe('tolga')
+    expect(v.verified?.label).toBe('claude')
+    expect(tolga.ticketProgress(Object.keys(tolga.state.tickets!)[0])).toHaveLength(1)
+  })
+
+  test('owner invited to someone else’s council: admin admits the member’s agent automatically', async () => {
+    const admin = await peer('chair', 'human')
+    const alice = await peer('alice', 'human')
+    const g = admin.createGroup('shared')
+    await alice.redeem(admin.createInvite(g.id))
+    await until(() => alice.state.groups[g.id] && Object.keys(admin.state.groups[g.id].roster.members).length === 2)
+    const ticket = alice.createTicket([g.id])
+    const [codex, pi] = await Promise.all([agentFromTicket(ticket, 'codex', 'codex@box'), agentFromTicket(ticket, 'pi', 'pi@box')])
+    await until(() => codex.state.groups[g.id] && pi.state.groups[g.id])
+    expect(admin.member(g.id, codex.pubkey)?.verified?.owner).toBe(alice.pubkey)
+    expect(codex.pubkey).not.toBe(pi.pubkey)
+  })
+
+  test('strangers and disabled councils are refused', async () => {
+    const admin = await peer('gate', 'human')
+    const outsider = await peer('outsider', 'human')
+    const g = admin.createGroup('closed')
+    // outsider is not a member: their ticket lists the council but admission is denied
+    const fake = outsider.createTicket([])
+    const { decodeTicket, encodeTicket } = await import('../src/links')
+    const t = decodeTicket(fake)
+    t.groups = [{ groupId: g.id, name: 'closed', relays: [relay.url], admins: [{ pubkey: admin.pubkey, inbox: admin.state.inbox }] }]
+    const bot = await agentFromTicket(encodeTicket(t), 'claude', 'intruder')
+    await until(() => Object.values(bot.state.pendingJoins)[0]?.status === 'denied')
+    expect(admin.state.groups[g.id].roster.members[bot.pubkey]).toBeUndefined()
+  })
+})

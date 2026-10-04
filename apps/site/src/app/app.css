@@ -1285,6 +1285,12 @@
   .topbar-actions .btn.ghost {
     display: none;
   }
+  /* icon-only header buttons so the council name keeps its room */
+  .topbar-actions .btn.small {
+    font-size: 0;
+    gap: 0;
+    padding: 9px;
+  }
   .welcome-actions {
     grid-template-columns: 1fr;
   }
@@ -1296,4 +1302,77 @@
     padding-left: 12px;
     padding-right: 12px;
   }
+}
+
+/* add-agents dialog */
+.modal.wide {
+  width: min(640px, 100%);
+}
+.lede-sm {
+  color: var(--ink-2);
+  margin: 4px 0 16px;
+}
+.command {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  border-radius: var(--r-2);
+  padding: 12px 12px 12px 16px;
+}
+.command code {
+  flex: 1;
+  min-width: 0;
+  font: 13px/1.5 var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.small-note {
+  font-size: 13px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.council-picks {
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  padding: 8px 14px 12px;
+  margin: 8px 0;
+}
+.seat-status {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: var(--r-2);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.seat-status ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.seat-status li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  color: var(--sage);
+}
+.seat-status li strong {
+  color: var(--ink);
+}
+.seat-status .waiting {
+  margin: 0;
+}
+.panel-check {
+  margin: 12px 16px;
+  font-size: 13.5px;
+}
+.legacy summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.legacy[open] summary {
+  margin-bottom: 8px;
 }

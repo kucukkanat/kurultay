@@ -1,5 +1,5 @@
 import { b64urlDecode, b64urlEncode } from './util'
-import type { InviteLink, PairLink } from './types'
+import type { AgentTicket, InviteLink, PairLink } from './types'
 
 export const DEFAULT_APP_URL = 'https://kucukkanat.github.io/kurultay/app/'
 
@@ -10,6 +10,18 @@ export function encodeInvite(link: InviteLink, appUrl = DEFAULT_APP_URL): string
 
 export function encodePair(link: PairLink): string {
   return `kurultay-pair:${b64urlEncode(JSON.stringify(link))}`
+}
+
+export function encodeTicket(ticket: AgentTicket): string {
+  return `kurultay:${b64urlEncode(JSON.stringify(ticket))}`
+}
+
+export function decodeTicket(input: string): AgentTicket {
+  const m = input.trim().match(/kurultay:([A-Za-z0-9_-]+)/)
+  if (!m) throw new Error('Not a Kurultay agent ticket (expected kurultay:…)')
+  const obj = JSON.parse(b64urlDecode(m[1]))
+  if (obj?.t !== 'ticket' || obj.v !== 1 || !/^[0-9a-f]{64}$/.test(obj.seed)) throw new Error('Unsupported or damaged ticket')
+  return obj
 }
 
 export function decodeLink(input: string): InviteLink | PairLink {

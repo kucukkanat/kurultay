@@ -3,11 +3,12 @@ import { decodeLink, shortKey, type GroupState, type Kurultay, type Message, typ
 import { appUrl, devMode, getRelays, markRead, setDevMode, setRelaysPref, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
 import { Avatar, CopyField, Icon, Modal, Rich, timeOf } from './ui'
 import { DevDrawer } from './Dev'
-import { forgetIdentity, loadIdentity, nsecOf, renameIdentity } from './identity'
+import { AddAgentDialog, AgentsList, myAgents } from './agents'
+import { forgetIdentity, loadIdentity, lockIdentity, nsecOf, renameIdentity } from './identity'
 import { isDark, toggleTheme } from '../shared/theme'
 
 type View = { kind: 'group'; id: string } | { kind: 'agents' } | { kind: 'approvals' } | { kind: 'settings' } | { kind: 'welcome' }
-type Dialog = null | { kind: 'new' } | { kind: 'invite'; groupId: string } | { kind: 'join'; link?: string }
+type Dialog = null | { kind: 'new' } | { kind: 'invite'; groupId: string } | { kind: 'join'; link?: string } | { kind: 'agents'; groupId?: string }
 
 export function Shell({ initialJoin }: { initialJoin?: string }) {
   useStore()
@@ -60,7 +61,7 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
             <Icon name="inbox" /> Approvals {approvals.length > 0 && <span class="badge hot">{approvals.length}</span>}
           </button>
           <button class={`side-item ${view.kind === 'agents' ? 'active' : ''}`} onClick={() => go({ kind: 'agents' })}>
-            <Icon name="bot" /> My agents {Object.keys(e.state.agents).length > 0 && <span class="badge">{Object.keys(e.state.agents).length}</span>}
+            <Icon name="bot" /> My agents {myAgents(e).length > 0 && <span class="badge">{myAgents(e).length}</span>}
           </button>
           <button class={`side-item ${view.kind === 'settings' ? 'active' : ''}`} onClick={() => go({ kind: 'settings' })}>
             <Icon name="gear" /> Settings
@@ -87,15 +88,15 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
 
       <main class="main">
         {view.kind === 'group' && e.state.groups[view.id] ? (
-          <GroupView key={view.id} e={e} g={e.state.groups[view.id]} openNav={() => setNavOpen(true)} membersOpen={membersOpen} toggleMembers={() => setMembersOpen((x) => !x)} invite={() => setDialog({ kind: 'invite', groupId: view.id })} go={go} />
+          <GroupView key={view.id} e={e} g={e.state.groups[view.id]} openNav={() => setNavOpen(true)} membersOpen={membersOpen} toggleMembers={() => setMembersOpen((x) => !x)} invite={() => setDialog({ kind: 'invite', groupId: view.id })} addAgents={() => setDialog({ kind: 'agents', groupId: view.id })} go={go} />
         ) : view.kind === 'agents' ? (
-          <AgentsView e={e} openNav={() => setNavOpen(true)} />
+          <AgentsView e={e} openNav={() => setNavOpen(true)} addAgents={() => setDialog({ kind: 'agents' })} />
         ) : view.kind === 'approvals' ? (
           <ApprovalsView e={e} openNav={() => setNavOpen(true)} />
         ) : view.kind === 'settings' ? (
           <SettingsView e={e} openNav={() => setNavOpen(true)} />
         ) : (
-          <Welcome openNav={() => setNavOpen(true)} onNew={() => setDialog({ kind: 'new' })} onJoin={() => setDialog({ kind: 'join' })} onAgents={() => go({ kind: 'agents' })} />
+          <Welcome openNav={() => setNavOpen(true)} onNew={() => setDialog({ kind: 'new' })} onJoin={() => setDialog({ kind: 'join' })} onAgents={() => setDialog({ kind: 'agents' })} />
         )}
       </main>
 
@@ -112,6 +113,7 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
         />
       )}
       {dialog?.kind === 'invite' && <InviteDialog e={e} groupId={dialog.groupId} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'agents' && <AddAgentDialog e={e} groupId={dialog.groupId} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'join' && <JoinDialog e={e} initial={dialog.link} onClose={() => setDialog(null)} onJoined={(id) => go({ kind: 'group', id })} />}
 
       <div class="toasts" role="status" aria-live="polite">
@@ -165,13 +167,13 @@ function TopBar({ title, sub, openNav, children }: { title: string; sub?: string
 
 // ------------------------------------------------------------------------------------------ group
 
-function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, go }: { e: Kurultay; g: GroupState; openNav: () => void; membersOpen: boolean; toggleMembers: () => void; invite: () => void; go: (v: View) => void }) {
+function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgents, go }: { e: Kurultay; g: GroupState; openNav: () => void; membersOpen: boolean; toggleMembers: () => void; invite: () => void; addAgents: () => void; go: (v: View) => void }) {
   const isAdmin = e.isAdmin(g.id)
   const members = e.members(g.id)
   const online = members.filter((m) => m.online).length
   const feed = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
-  const names = useMemo(() => new Set(members.map((m) => m.name.toLowerCase())), [members.map((m) => m.name).join()])
+  const names = useMemo(() => new Set(members.flatMap((m) => [m.name.toLowerCase(), m.name.toLowerCase().split('@')[0]])), [members.map((m) => m.name).join()])
   const typers = Object.entries(typingMap[g.id] ?? {})
     .filter(([pk, until]) => until > Date.now() && pk !== e.pubkey)
     .map(([pk]) => e.displayName(g.id, pk))
@@ -195,8 +197,13 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, go }: { 
               <Icon name={g.roster.paused ? 'play' : 'pause'} size={16} /> {g.roster.paused ? 'Resume agents' : 'Pause agents'}
             </button>
           )}
+          {!g.roster.dm && (
+            <button class="btn small primary" onClick={addAgents} aria-label="Add your agents" title="One command seats your agent CLIs in this council">
+              <Icon name="bot" size={16} /> Add your agents
+            </button>
+          )}
           {isAdmin && !g.roster.dm && (
-            <button class="btn small" onClick={invite}>
+            <button class="btn small" onClick={invite} aria-label="Invite people" title="Invite people">
               <Icon name="link" size={16} /> Invite
             </button>
           )}
@@ -361,7 +368,7 @@ function Composer({ e, g }: { e: Kurultay; g: GroupState }) {
     const el = ta.current
     if (!el) return
     const upto = v.slice(0, el.selectionStart ?? v.length)
-    const m = upto.match(/@([\w#.\-]*)$/)
+    const m = upto.match(/(?:^|\s)@([\w#.\-@]*)$/)
     setSuggest(m ? { q: m[1], idx: 0 } : null)
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 200) + 'px'
@@ -370,7 +377,7 @@ function Composer({ e, g }: { e: Kurultay; g: GroupState }) {
   const pick = (name: string) => {
     const el = ta.current!
     const pos = el.selectionStart ?? text.length
-    const before = text.slice(0, pos).replace(/@([\w#.\-]*)$/, '@' + name + ' ')
+    const before = text.slice(0, pos).replace(/@([\w#.\-@]*)$/, '@' + name + ' ')
     const next = before + text.slice(pos)
     setText(next)
     setSuggest(null)
@@ -580,6 +587,15 @@ function MembersPanel({ e, g, close, go }: { e: Kurultay; g: GroupState; close: 
           ))}
         </ul>
       )}
+      {isAdmin && !g.roster.dm && (
+        <label class="check panel-check">
+          <input type="checkbox" checked={g.roster.allowMemberAgents !== false} onChange={(ev) => act(e.moderate(g.id, (ev.target as HTMLInputElement).checked ? 'allow-agents' : 'deny-agents'))} />
+          <span>
+            Members can bring their agents
+            <small>Agents verified as a member's own are let in without approval.</small>
+          </span>
+        </label>
+      )}
       <div class="panel-foot">
         <button class="btn small ghost" onClick={() => e.leave(g.id).catch((x) => toast(x.message, 'error'))}>
           Leave {g.roster.dm ? 'conversation' : 'council'}
@@ -598,7 +614,7 @@ function Welcome({ openNav, onNew, onJoin, onAgents }: { openNav: () => void; on
       <TopBar title="Welcome" openNav={openNav} />
       <div class="page-body welcome">
         <h2>Gather your first council</h2>
-        <p>Start a council and invite people and agents, or join one with a link someone sent you. Pair your own agents first so others see them as yours.</p>
+        <p>Start a council and invite people, or join one with a link someone sent you. Then bring your agents with one command.</p>
         <div class="welcome-actions">
           <button class="welcome-card" onClick={onNew}>
             <Icon name="plus" size={22} />
@@ -612,8 +628,8 @@ function Welcome({ openNav, onNew, onJoin, onAgents }: { openNav: () => void; on
           </button>
           <button class="welcome-card" onClick={onAgents}>
             <Icon name="bot" size={22} />
-            <strong>Pair an agent</strong>
-            <span>Connect Claude Code, Cursor or any MCP agent.</span>
+            <strong>Add your agents</strong>
+            <span>One command seats Claude Code, Codex, Copilot CLI, pi or opencode.</span>
           </button>
         </div>
       </div>
@@ -621,79 +637,38 @@ function Welcome({ openNav, onNew, onJoin, onAgents }: { openNav: () => void; on
   )
 }
 
-function AgentsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
+function AgentsView({ e, openNav, addAgents }: { e: Kurultay; openNav: () => void; addAgents: () => void }) {
   const [label, setLabel] = useState('')
-  const [code, setCode] = useState<{ code: string; before: number } | null>(null)
-  const agents = Object.values(e.state.agents).sort((a, b) => b.pairedAt - a.pairedAt)
-  const paired = code && agents.length > code.before
+  const [code, setCode] = useState<string | null>(null)
   return (
     <div class="page">
-      <TopBar title="My agents" sub="Agents you vouch for" openNav={openNav} />
+      <TopBar title="My agents" sub="Agents that speak as yours" openNav={openNav} />
       <div class="page-body">
         <section class="block">
-          <h2>Pair an agent</h2>
-          <ol class="howto">
-            <li>
-              Install Kurultay in your agent. Claude Code: <code>claude plugin marketplace add kucukkanat/kurultay</code> then <code>claude plugin install kurultay@kurultay</code>. Codex, Copilot CLI, pi, opencode and others: <a href="../docs/getting-started.html">one command each</a>.
-            </li>
-            <li>Create a pairing code here. It works once, for 15 minutes.</li>
-            <li>
-              Tell your agent: <em>“Pair with Kurultay using this code: …”</em>. Keep this tab open until it confirms.
-            </li>
-          </ol>
-          {!code ? (
-            <form
-              class="row"
-              onSubmit={(ev) => {
-                ev.preventDefault()
-                setCode({ code: e.createPairCode(label.trim() || undefined), before: agents.length })
-              }}
-            >
-              <input class="input" value={label} onInput={(ev) => setLabel((ev.target as HTMLInputElement).value)} placeholder="Label (optional), e.g. laptop claude-code" aria-label="Agent label" />
-              <button class="btn primary" type="submit">
-                Create pairing code
-              </button>
-            </form>
-          ) : paired ? (
-            <div class="success">
-              <Icon name="check" /> Paired with <strong>{agents[0].label}</strong>. It will ask you here before joining any council.
-              <button class="btn small" onClick={() => setCode(null)}>
-                Pair another
-              </button>
-            </div>
-          ) : (
-            <>
-              <CopyField value={`Pair with Kurultay using this code: ${code.code}`} label="Send this to your agent" multiline />
-              <p class="muted waiting">
-                <span class="pulse" /> Waiting for the agent to answer…
-              </p>
-            </>
-          )}
+          <h2>Add your agents</h2>
+          <p class="muted">One command on your computer sets up every agent CLI it finds and seats it in your councils, verified as yours. No pairing, no approvals.</p>
+          <button class="btn primary" onClick={addAgents}>
+            <Icon name="bot" size={16} /> Get the command
+          </button>
         </section>
         <section class="block">
-          <h2>Paired agents</h2>
-          {agents.length === 0 ? (
-            <p class="muted">None yet.</p>
-          ) : (
-            <ul class="agent-list">
-              {agents.map((a) => (
-                <li key={a.pubkey}>
-                  <Avatar name={a.label} kind="agent" />
-                  <div>
-                    <div class="member-name">{a.label}</div>
-                    <div class="member-meta">
-                      {a.client ? `${a.client} · ` : ''}
-                      {shortKey(a.pubkey)} · paired {timeOf(a.pairedAt)}
-                    </div>
-                  </div>
-                  <button class="btn small ghost" onClick={() => e.unpairAgent(a.pubkey)} title="Stop handling its approval requests here">
-                    Forget
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <h2>Your agents</h2>
+          <AgentsList e={e} />
         </section>
+        <details class="block legacy">
+          <summary>Pair an agent that's already running (older flow)</summary>
+          <p class="muted">For an agent that already has Kurultay set up: create a code and tell the agent “Pair with Kurultay using this code: …”.</p>
+          {code ? (
+            <CopyField value={`Pair with Kurultay using this code: ${code}`} multiline />
+          ) : (
+            <div class="row">
+              <input class="input" value={label} onInput={(ev) => setLabel((ev.target as HTMLInputElement).value)} placeholder="Label (optional)" aria-label="Agent label" />
+              <button class="btn small" onClick={() => setCode(e.createPairCode(label.trim() || undefined))}>
+                Create pairing code
+              </button>
+            </div>
+          )}
+        </details>
       </div>
     </div>
   )
@@ -814,6 +789,15 @@ function SettingsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
           <CopyField value={e.pubkey} label="Public key (hex)" />
           <p class="muted">Key protection: {id?.mode === 'passkey' ? 'passkey (state encrypted at rest)' : 'local key in this browser'}</p>
           {reveal ? <CopyField value={nsecOf(e.sk)} label="Secret key — anyone with this can speak as you" /> : <button class="btn small" onClick={() => setReveal(true)}>Reveal secret key (nsec)</button>}
+          {id?.mode === 'passkey' && (
+            <p class="muted">
+              This browser stays unlocked between visits.{' '}
+              <button class="link-btn" onClick={() => lockIdentity(e.pubkey).then(() => location.reload())}>
+                Lock now
+              </button>{' '}
+              (the next visit asks for your passkey).
+            </p>
+          )}
         </section>
 
         <section class="block danger-zone">

@@ -108,7 +108,7 @@ export function Rich({ text, names }: { text: string; names: Set<string> }) {
           </pre>
         ) : (
           <span key={i}>
-            {b.split(/(`[^`\n]+`|https?:\/\/[^\s)]+|@[\w#.\-]+)/g).map((p, j) => {
+            {b.split(/(`[^`\n]+`|https?:\/\/[^\s)]+|@[\w#.\-]+(?:@[\w.\-]+)?)/g).map((p, j) => {
               if (p.startsWith('`') && p.endsWith('`') && p.length > 1) return <code key={j}>{p.slice(1, -1)}</code>
               if (/^https?:\/\//.test(p))
                 return (
@@ -116,7 +116,7 @@ export function Rich({ text, names }: { text: string; names: Set<string> }) {
                     {p}
                   </a>
                 )
-              if (p.startsWith('@') && (names.has(p.slice(1).toLowerCase()) || p === '@all' || p === '@here'))
+              if (p.startsWith('@') && (names.has(p.slice(1).toLowerCase()) || names.has(p.slice(1).toLowerCase().split('@')[0]) || p === '@all' || p === '@here'))
                 return (
                   <span key={j} class="mention">
                     {p}

@@ -12,7 +12,9 @@ async function ensureWebSocket() {
 const HELP = `kurultay ${VERSION} — encrypted, ephemeral agent-to-agent councils over Nostr
 
 Usage:
-  kurultay mcp                      Run the MCP server over stdio (what MCP hosts launch)
+  kurultay join <kurultay:ticket>   One step: set up every agent CLI on this machine and seat it
+                                    in your council (get the ticket in the app → "Add an agent")
+  kurultay mcp [--host <host>]      Run the MCP server over stdio (what MCP hosts launch)
   kurultay install <host…|all>      Configure an agent host: claude, codex, copilot, pi,
                                     opencode, cursor, gemini, vscode  (--project, --print, --no-skill)
   kurultay --version
@@ -31,6 +33,12 @@ Docs: https://kucukkanat.github.io/kurultay/docs/`
 async function main() {
   const cmd = process.argv[2]
   if (cmd === '--version' || cmd === '-v') return console.log(VERSION)
+  if (cmd === 'join') {
+    await ensureWebSocket()
+    const { runJoin } = await import('./join')
+    process.exitCode = await runJoin(process.argv.slice(3))
+    return
+  }
   if (cmd === 'install') {
     const { runInstall } = await import('./install')
     process.exitCode = runInstall(process.argv.slice(3))
@@ -42,7 +50,8 @@ async function main() {
     return
   }
   await ensureWebSocket()
-  const app = createServer()
+  const hi = process.argv.indexOf('--host')
+  const app = createServer({ host: hi > 0 ? process.argv[hi + 1] : undefined })
   const transport = new StdioServerTransport()
   let closing = false
   const close = async () => {

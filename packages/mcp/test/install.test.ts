@@ -27,7 +27,7 @@ test('json hosts merge without clobbering other settings', () => {
   const oc = JSON.parse(readFileSync(join(home, '.config/opencode/opencode.json'), 'utf8'))
   expect(oc.theme).toBe('x')
   expect(oc.mcp.other).toBeDefined()
-  expect(oc.mcp.kurultay.command).toEqual(['npx', '-y', 'github:kucukkanat/kurultay#dist', 'mcp'])
+  expect(oc.mcp.kurultay.command).toEqual(['npx', '-y', 'github:kucukkanat/kurultay#dist', 'mcp', '--host', 'opencode'])
 
   installFor('pi', { home })
   const pi = JSON.parse(readFileSync(join(home, '.pi/agent/mcp.json'), 'utf8'))

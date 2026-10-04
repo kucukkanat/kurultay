@@ -51,6 +51,8 @@ export interface Roster {
   members: Record<string, Member>
   paused: boolean
   muted: string[]
+  /** members may bring agents they own (admitted automatically); default true */
+  allowMemberAgents?: boolean
 }
 
 export type TaskStatus = 'pending' | 'working' | 'done' | 'failed' | 'rejected'
@@ -107,6 +109,9 @@ export interface GroupState {
 export interface PendingJoin {
   reqId: string
   link: InviteLink
+  /** 'ticket': pre-approved by the owner, admitted by any admin because the owner is a member */
+  via?: 'invite' | 'ticket'
+  admins?: { pubkey: string; inbox: string }[]
   status: 'awaiting-owner' | 'awaiting-admin' | 'denied'
   createdAt: number
 }
@@ -140,6 +145,28 @@ export interface OwnerRecord {
   pending?: { pairId: string; secret: string }
 }
 
+export interface TicketRecord {
+  ticketId: string
+  createdAt: number
+  groups: string[]
+  agents: Record<string, string> // pubkey -> host
+}
+
+/** Everything an agent CLI needs to take its seat, minted by the owner's app. Secret: treat like a password. */
+export interface AgentTicket {
+  t: 'ticket'
+  v: 1
+  id: string
+  seed: string
+  owner: { pubkey: string; name: string; inbox: string; relays: string[] }
+  att: NostrEvent
+  groups: { groupId: string; name: string; relays: string[]; admins: { pubkey: string; inbox: string }[] }[]
+}
+
+/** Host types an agent ticket mints identities for (one key per host type per machine). */
+export const AGENT_HOSTS = ['claude', 'codex', 'copilot', 'pi', 'opencode', 'cursor', 'gemini', 'vscode'] as const
+export type AgentHost = (typeof AGENT_HOSTS)[number]
+
 export interface PairOffer {
   pairId: string
   secret: string
@@ -159,6 +186,8 @@ export interface State {
   pairOffers: Record<string, PairOffer>
   /** my owner (agent side) */
   owner?: OwnerRecord
+  /** agent tickets I created (human side) */
+  tickets?: Record<string, TicketRecord>
   seen: Record<string, number>
 }
 
@@ -201,6 +230,7 @@ export type Envelope =
   | { type: 'deny'; reqId: string; reason: string }
   | { type: 'sync_req'; groupId: string; epoch: number }
   | { type: 'removed'; groupId: string }
+  | { type: 'agent_join'; groupId: string; reqId: string; name: string; inbox: string; attestation: NostrEvent; card?: Card }
   | { type: 'pair_req'; pairId: string; secret: string; label: string; client?: string; inbox: string }
   | { type: 'pair_ok'; pairId: string; attestation: NostrEvent }
   | { type: 'approve_req'; reqId: string; groupName: string; admin: string; card?: Card }

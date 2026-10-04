@@ -64,3 +64,18 @@ export function loadOrCreateKey(account: string, dir: string): { sk: Uint8Array;
   chmodSync(file, 0o600)
   return { sk, source: 'file' }
 }
+
+/** Store a given secret key for an account (keychain when available, else chmod-600 file). */
+export function saveKey(account: string, dir: string, sk: Uint8Array): KeySource {
+  const hex = bytesToHex(sk)
+  const stored = keychainSet(account, hex)
+  if (stored && keychainGet(account) === hex) {
+    const file = join(dir, 'secret.key')
+    if (existsSync(file)) writeFileSync(file, '', { mode: 0o600 })
+    return stored
+  }
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  writeFileSync(join(dir, 'secret.key'), hex + '\n', { mode: 0o600 })
+  chmodSync(join(dir, 'secret.key'), 0o600)
+  return 'file'
+}

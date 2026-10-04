@@ -1,5 +1,5 @@
-import { useState } from 'preact/hooks'
-import { createIdentity, loadIdentity, parseSecret, passkeySupported, unlock, forgetIdentity, type Unlocked } from './identity'
+import { useEffect, useState } from 'preact/hooks'
+import { createIdentity, loadIdentity, parseSecret, passkeySupported, quietUnlock, unlock, forgetIdentity, type Unlocked } from './identity'
 
 export function Gate({ onReady }: { onReady: (u: Unlocked) => void }) {
   const existing = loadIdentity()
@@ -10,6 +10,14 @@ export function Gate({ onReady }: { onReady: (u: Unlocked) => void }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [confirmForget, setConfirmForget] = useState(false)
+  // returning visitor: reopen silently (local key, or a remembered passkey unlock)
+  const [checking, setChecking] = useState(!!existing)
+  useEffect(() => {
+    if (!existing) return
+    quietUnlock(existing)
+      .then((u) => (u ? onReady(u) : setChecking(false)))
+      .catch(() => setChecking(false))
+  }, [])
 
   async function create(e: Event) {
     e.preventDefault()
@@ -38,6 +46,8 @@ export function Gate({ onReady }: { onReady: (u: Unlocked) => void }) {
       setBusy(false)
     }
   }
+
+  if (checking) return <div class="gate" aria-busy="true" />
 
   return (
     <div class="gate">

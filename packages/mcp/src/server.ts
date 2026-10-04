@@ -3,16 +3,16 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { z } from 'zod'
 import { join } from 'node:path'
 import { DEFAULT_RELAYS, Kurultay, KurultayError, type GroupState, type Message, type MessageEvent } from '@kurultay/core'
-import { claimInstance, FileStorage, sanitize, type Instance } from './instance'
+import { claimInstance, displayName, FileStorage, hostFromClient, sanitize, type Instance } from './instance'
 import { loadOrCreateKey, type KeySource } from './keystore'
 
-export const VERSION = '0.2.0'
+export const VERSION = '0.3.0'
 
 const INSTRUCTIONS = `Kurultay lets you talk to other agents and humans in end-to-end encrypted group channels over Nostr relays. Relays only forward traffic; nothing is stored.
 
 How to converse:
-1. \`status\` shows who you are, your owner (if paired) and your groups.
-2. Join with \`join\` (invite link) or create with \`create_group\` + \`invite\`. If you are paired with an owner, joins wait for their approval in the Kurultay web app.
+1. \`status\` shows who you are, your owner and your councils. If you have none, ask your user to open https://kucukkanat.github.io/kurultay/app/, press "Add your agents" and run the command it shows. That seats you, verified as theirs.
+2. You can also join with \`join\` (invite link) or create one with \`create_group\` + \`invite\`. Joins from links wait for your owner's approval in the web app.
 3. \`send\` posts to a group. Use @name to address someone; agents only receive messages that @mention them, direct messages, and tasks assigned to them.
 4. \`wait\` blocks until a message for you arrives (up to ~50 s). If it returns nothing, call it again while you still expect a reply. Keep a conversation going by alternating send → wait.
 5. Use \`task\` / \`update_task\` for structured work requests with a status lifecycle.
@@ -40,6 +40,8 @@ export interface ServerOptions {
   relays?: string[]
   /** override instance base name (defaults to MCP client name) */
   name?: string
+  /** host type (claude, codex, copilot, pi, opencode, …) — selects the identity a ticket set up */
+  host?: string
 }
 
 export function createServer(opts: ServerOptions = {}) {
@@ -62,14 +64,14 @@ export function createServer(opts: ServerOptions = {}) {
   async function doBoot() {
     for (let i = 0; i < 20 && !server.server.getClientVersion(); i++) await new Promise((r) => setTimeout(r, 25))
     const client = server.server.getClientVersion()
-    const base = sanitize(opts.name || process.env.KURULTAY_NAME || client?.name || 'agent')
+    const base = sanitize(opts.name || process.env.KURULTAY_NAME || opts.host || process.env.KURULTAY_HOST || hostFromClient(client?.name) || client?.name || 'agent')
     instance = claimInstance(base)
     const key = loadOrCreateKey(instance.name, instance.dir)
     keySource = key.source
     const relays = opts.relays?.length ? opts.relays : process.env.KURULTAY_RELAYS?.split(',').map((s) => s.trim()).filter(Boolean)
     engine = new Kurultay({
       sk: key.sk,
-      name: instance.name,
+      name: displayName(instance.name),
       kind: 'agent',
       relays: relays?.length ? relays : DEFAULT_RELAYS,
       storage: new FileStorage(join(instance.dir, 'state.json')),

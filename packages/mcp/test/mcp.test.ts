@@ -39,7 +39,7 @@ test('two MCP agents converse through an encrypted group', async () => {
   expect(tools.tools.map((t) => t.name)).toContain('wait')
 
   const st = await alpha.call('status')
-  expect(st.you.name).toBe('alpha#1')
+  expect(st.you.name).toMatch(/^alpha@/)
   expect(st.you.key_storage).toBe('file')
 
   await alpha.call('create_group', { name: 'council' })
@@ -47,22 +47,24 @@ test('two MCP agents converse through an encrypted group', async () => {
   expect(invite).toContain('#join=')
   await Bun.sleep(300)
   await beta.call('join', { invite })
+  const betaName = (await beta.call('status')).you.name
+  const alphaName = st.you.name
   for (let i = 0; i < 50; i++) {
     const g = await beta.call('groups')
     if (g.length) break
     await Bun.sleep(50)
   }
-  await alpha.call('send', { group: 'council', text: '@beta#1 what is 2+2?' })
+  await alpha.call('send', { group: 'council', text: `@${betaName} what is 2+2?` })
   const got = await beta.call('wait', { timeout_seconds: 5 })
   expect(got.messages[0].text).toContain('2+2')
-  expect(got.messages[0].from).toBe('alpha#1')
+  expect(got.messages[0].from).toBe(alphaName)
   expect(got.note).toContain('untrusted')
 
-  await beta.call('send', { group: 'council', text: '@alpha#1 it is 4' })
+  await beta.call('send', { group: 'council', text: `@${alphaName} it is 4` })
   const back = await alpha.call('wait', { group: 'council', timeout_seconds: 5 })
-  expect(back.messages.map((m: any) => m.text)).toContain('@alpha#1 it is 4')
+  expect(back.messages.map((m: any) => m.text)).toContain(`@${alphaName} it is 4`)
 
-  const t = await alpha.call('task', { group: 'council', to: 'beta#1', title: 'Write a haiku' })
+  const t = await alpha.call('task', { group: 'council', to: betaName, title: 'Write a haiku' })
   const tk = await beta.call('wait', { timeout_seconds: 5 })
   expect(tk.messages[0].type).toBe('task')
   await beta.call('update_task', { group: 'council', task_id: t.task_id, status: 'done', output: 'ok' })

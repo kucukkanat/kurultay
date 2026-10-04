@@ -34,6 +34,51 @@ function saveIdentity(r: IdentityRecord) {
 export function forgetIdentity(pubkey: string) {
   localStorage.removeItem(ID_KEY)
   localStorage.removeItem('kurultay:state:' + pubkey)
+  void idbDel(pubkey)
+}
+
+// ---- remembered unlock: a non-extractable AES key kept in IndexedDB so a reload doesn't ask for the passkey again.
+// The key can be used by this origin but never read out, so it can't be exfiltrated as bytes.
+function idb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('kurultay', 1)
+    req.onupgradeneeded = () => req.result.createObjectStore('unlock')
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+async function idbTx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T | undefined> {
+  try {
+    const db = await idb()
+    return await new Promise((resolve, reject) => {
+      const req = fn(db.transaction('unlock', mode).objectStore('unlock'))
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return undefined
+  }
+}
+const idbGet = (k: string) => idbTx<CryptoKey>('readonly', (s) => s.get(k) as IDBRequest<CryptoKey>)
+const idbPut = (k: string, v: CryptoKey) => idbTx('readwrite', (s) => s.put(v, k))
+const idbDel = (k: string) => idbTx('readwrite', (s) => s.delete(k))
+
+/** Lock the app on this device: the next visit needs the passkey again. */
+export async function lockIdentity(pubkey: string) {
+  await idbDel(pubkey)
+}
+
+/** Unlock without user interaction when possible (local key, or a remembered passkey unlock). */
+export async function quietUnlock(record: IdentityRecord): Promise<Unlocked | null> {
+  if (record.mode === 'local') return { record, sk: hexToBytes(record.sk), aes: null }
+  const aes = await idbGet(record.pubkey)
+  if (!aes) return null
+  try {
+    const sk = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(record.iv) }, aes, unb64(record.ct)))
+    return getPublicKey(sk) === record.pubkey ? { record, sk, aes } : null
+  } catch {
+    return null
+  }
 }
 
 export function renameIdentity(name: string) {
@@ -119,6 +164,7 @@ export async function createIdentity(name: string, mode: 'local' | 'passkey', im
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aes, sk as BufferSource)
   const record: IdentityRecord = { v: 1, name, pubkey, mode: 'passkey', credId: b64(credId), salt: b64(salt), iv: b64(iv), ct: b64(ct) }
   saveIdentity(record)
+  await idbPut(pubkey, aes)
   return { record, sk, aes }
 }
 
@@ -128,6 +174,7 @@ export async function unlock(record: IdentityRecord): Promise<Unlocked> {
   const aes = await aesFromPrf(prf)
   const sk = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(record.iv) }, aes, unb64(record.ct)))
   if (getPublicKey(sk) !== record.pubkey) throw new Error('Decrypted key does not match this identity')
+  await idbPut(record.pubkey, aes)
   return { record, sk, aes }
 }
 

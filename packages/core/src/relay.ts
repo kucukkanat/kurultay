@@ -60,6 +60,7 @@ class RelayConn {
       this.backoff = 1000
       this.setStatus('open')
       for (const [id, filter] of this.pool.subs) this.send(['REQ', id, filter])
+      this.flushOutbox()
       this.probe()
     }
     ws.onmessage = (msg) => this.onMessage(String(msg.data))
@@ -84,6 +85,7 @@ class RelayConn {
 
   close() {
     this.closedByUs = true
+    for (const it of this.outbox.splice(0)) it.resolve({ ok: false, msg: 'closed' })
     try {
       this.ws?.close()
     } catch {}
@@ -101,8 +103,25 @@ class RelayConn {
     return true
   }
 
+  /** events published while the socket was down; flushed on (re)connect, dropped after 20 s */
+  private outbox: { ev: NostrEvent; until: number; resolve: (r: { ok: boolean; msg: string }) => void }[] = []
+
+  flushOutbox() {
+    const t = Date.now()
+    const items = this.outbox.splice(0)
+    for (const it of items) {
+      if (it.until < t) it.resolve({ ok: false, msg: 'not connected' })
+      else this.publish(it.ev).then(it.resolve)
+    }
+  }
+
   publish(ev: NostrEvent): Promise<{ ok: boolean; msg: string }> {
     return new Promise((resolve) => {
+      if (this.ws?.readyState !== 1) {
+        if (this.closedByUs) return resolve({ ok: false, msg: 'closed' })
+        this.outbox.push({ ev, until: Date.now() + 20_000, resolve })
+        return
+      }
       if (!this.send(['EVENT', ev])) return resolve({ ok: false, msg: 'not connected' })
       const timer = setTimeout(() => {
         this.pendingOk.delete(ev.id)

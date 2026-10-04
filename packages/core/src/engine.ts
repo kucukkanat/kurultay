@@ -1,5 +1,7 @@
 import {
   attest,
+  attestMany,
+  deriveAgent,
   checkAttestation,
   getPublicKey,
   routeWindow,
@@ -10,13 +12,15 @@ import {
   wrapGroup,
   wrapInbox,
 } from './crypto'
-import { decodeLink, encodeInvite, encodePair } from './links'
+import { decodeLink, encodeInvite, encodePair, encodeTicket } from './links'
 import { RelayPool, type Frame, type RelayInfo } from './relay'
 import {
   DEFAULT_RELAYS,
   MAX_TEXT_BYTES,
   ROUTE_TAG,
   KIND_WRAP,
+  AGENT_HOSTS,
+  type AgentTicket,
   type Approval,
   type Card,
   type Envelope,
@@ -146,6 +150,7 @@ export class Kurultay extends Emitter<EngineEvents> {
   private presenceInterval: number
   private limits: Required<NonNullable<EngineOptions['limits']>>
   private started = false
+  private reconnectTimer?: ReturnType<typeof setTimeout>
 
   constructor(opts: EngineOptions) {
     super()
@@ -166,7 +171,18 @@ export class Kurultay extends Emitter<EngineEvents> {
     this.pool = new RelayPool()
     this.pool.on('event', ({ relay, event }) => this.onOuter(event, relay))
     this.pool.on('frame', (f) => this.emit('frame', f))
-    this.pool.on('status', (r) => this.emit('relay', r))
+    this.pool.on('status', (r) => {
+      this.emit('relay', r)
+      // a (re)connected relay missed everything sent while it was down: catch up on control traffic
+      if (r.status === 'open' && this.started) {
+        clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = setTimeout(() => {
+          this.syncAll()
+          this.retryPending()
+          this.beacon()
+        }, 400)
+      }
+    })
   }
 
   // ------------------------------------------------------------------ lifecycle
@@ -181,6 +197,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     this.resubscribe()
     this.syncAll()
     this.beacon()
+    this.retryPending()
     this.timers.push(setInterval(() => this.tick(), 5_000))
   }
 
@@ -397,11 +414,13 @@ export class Kurultay extends Emitter<EngineEvents> {
     switch (env.type) {
       case 'join_req':
         return this.onJoinReq(from, env)
+      case 'agent_join':
+        return this.onAgentJoin(from, env)
       case 'key':
         return this.onKey(from, env)
       case 'deny': {
         const p = this.state.pendingJoins[env.reqId]
-        if (!p || p.link.admin !== from) return
+        if (!p || (p.link.admin !== from && !(p.admins ?? []).some((a) => a.pubkey === from))) return
         p.status = 'denied'
         this.emit('notice', { level: 'warn', text: `Join to “${p.link.name}” denied: ${env.reason}` })
         this.changed('join-denied')
@@ -508,12 +527,35 @@ export class Kurultay extends Emitter<EngineEvents> {
     }
   }
 
+  /** An agent carrying its owner's attestation asks to join; admitted when the owner is a human member. */
+  private onAgentJoin(from: string, env: Extract<Envelope, { type: 'agent_join' }>) {
+    const g = this.state.groups[env.groupId]
+    if (!g || !this.isAdmin(g.id)) return
+    const existing = g.roster.members[from]
+    if (existing) {
+      void this.sendInbox(from, existing.inbox, { type: 'key', groupId: g.id, reqId: env.reqId, relays: g.relays, epoch: g.epoch, key: g.key, roster: g.roster })
+      return
+    }
+    const att = checkAttestation(env.attestation, from)
+    const owner = att ? g.roster.members[att.owner] : undefined
+    if (!att || !owner || owner.kind !== 'human') {
+      void this.sendInbox(from, env.inbox, { type: 'deny', reqId: env.reqId, reason: 'the agent’s owner is not a member of this council' })
+      return
+    }
+    if (g.roster.allowMemberAgents === false) {
+      void this.sendInbox(from, env.inbox, { type: 'deny', reqId: env.reqId, reason: 'this council does not accept members’ agents' })
+      return
+    }
+    this.admit(g.id, { pubkey: from, name: String(env.name).slice(0, 64), kind: 'agent', inbox: env.inbox, owner: att.owner, attestation: env.attestation, card: env.card }, env.reqId)
+  }
+
   private onKey(from: string, env: Extract<Envelope, { type: 'key' }>) {
     const roster = env.roster
     if (!roster?.members?.[this.pubkey] || !roster.admins.includes(from)) return
     const pendingEntry = env.reqId ? this.state.pendingJoins[env.reqId] : undefined
     const groupId = env.groupId
-    if (pendingEntry && (pendingEntry.link.admin !== from || pendingEntry.link.groupId !== groupId)) return
+    const pendingAdmins = pendingEntry ? [pendingEntry.link.admin, ...(pendingEntry.admins ?? []).map((a) => a.pubkey)] : []
+    if (pendingEntry && (!pendingAdmins.includes(from) || pendingEntry.link.groupId !== groupId)) return
     const existing = this.state.groups[groupId]
     // unsolicited adds (DMs, direct adds) are only accepted from peers we already share a group with
     if (!existing && !pendingEntry && !Object.values(this.state.groups).some((x) => x.roster.members[from])) return
@@ -624,7 +666,7 @@ export class Kurultay extends Emitter<EngineEvents> {
   }
 
   private extractMentions(text: string) {
-    return [...text.matchAll(/@([\w#.\-]+)/g)].map((m) => m[1])
+    return [...text.matchAll(/(?:^|[^\w@])@([\w#.\-]+(?:@[\w.\-]+)?)/g)].map((m) => m[1].replace(/[.\-]+$/, ''))
   }
 
   /** Resolve names, labels, short or full pubkeys to member pubkeys ("all" passes through). */
@@ -641,9 +683,11 @@ export class Kurultay extends Emitter<EngineEvents> {
         continue
       }
       const lower = r.toLowerCase()
+      const short = members.filter((m) => m.name.toLowerCase().split('@')[0] === lower)
       const hit =
         members.find((m) => m.pubkey === r) ??
         members.find((m) => m.name.toLowerCase() === lower) ??
+        (short.length === 1 ? short[0] : undefined) ??
         members.find((m) => m.pubkey.startsWith(lower) && lower.length >= 6)
       if (hit) out.add(hit.pubkey)
     }
@@ -724,6 +768,17 @@ export class Kurultay extends Emitter<EngineEvents> {
   }
 
   private async sendJoinReq(reqId: string, link: InviteLink) {
+    const p = this.state.pendingJoins[reqId]
+    if (p?.via === 'ticket') {
+      const att = this.state.owner?.attestation
+      if (!att) return
+      await Promise.all(
+        (p.admins ?? [{ pubkey: link.admin, inbox: link.adminInbox }]).map((a) =>
+          this.sendInbox(a.pubkey, a.inbox, { type: 'agent_join', groupId: link.groupId, reqId, name: this.name, inbox: this.state.inbox, attestation: att, card: this.card }),
+        ),
+      )
+      return
+    }
     await this.sendInbox(link.admin, link.adminInbox, {
       type: 'join_req',
       reqId,
@@ -743,7 +798,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     const t = now()
     for (const p of Object.values(this.state.pendingJoins)) {
       if (p.status !== 'awaiting-admin') continue
-      if (p.link.expiresAt < t || t - p.createdAt > 3600) {
+      if (p.link.expiresAt < t || (p.via !== 'ticket' && t - p.createdAt > 3600)) {
         delete this.state.pendingJoins[p.reqId]
         continue
       }
@@ -838,12 +893,14 @@ export class Kurultay extends Emitter<EngineEvents> {
     this.changed('removed-member')
   }
 
-  async moderate(groupId: string, action: 'pause' | 'resume' | 'mute' | 'unmute' | 'promote', target?: string) {
+  async moderate(groupId: string, action: 'pause' | 'resume' | 'mute' | 'unmute' | 'promote' | 'allow-agents' | 'deny-agents', target?: string) {
     const g = this.state.groups[groupId]
     if (!g || !this.isAdmin(groupId)) throw new KurultayError('Only admins can moderate')
     const r = g.roster
     if (action === 'pause') r.paused = true
     if (action === 'resume') r.paused = false
+    if (action === 'allow-agents') r.allowMemberAgents = true
+    if (action === 'deny-agents') r.allowMemberAgents = false
     if (action === 'mute' && target && !r.muted.includes(target)) r.muted.push(target)
     if (action === 'unmute' && target) r.muted = r.muted.filter((x) => x !== target)
     if (action === 'promote' && target && r.members[target] && !r.admins.includes(target)) {
@@ -853,7 +910,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     r.version++
     await this.sendGroup(groupId, { type: 'state', roster: r, epoch: g.epoch })
     const who = target ? r.members[target]?.name ?? target.slice(0, 8) : ''
-    this.system(groupId, { pause: 'Agents paused by moderator', resume: 'Agents resumed', mute: `${who} muted`, unmute: `${who} unmuted`, promote: `${who} is now an admin` }[action])
+    this.system(groupId, { pause: 'Agents paused by moderator', resume: 'Agents resumed', mute: `${who} muted`, unmute: `${who} unmuted`, promote: `${who} is now an admin`, 'allow-agents': 'Members may now bring their own agents', 'deny-agents': 'Members can no longer bring their own agents' }[action])
   }
 
   async leave(groupId: string) {
@@ -895,6 +952,70 @@ export class Kurultay extends Emitter<EngineEvents> {
   setCard(card: Partial<Card>) {
     this.card = { ...this.card, ...card, kind: this.kind }
     this.beacon()
+  }
+
+  // ------------------------------------------------------------------ agent tickets
+
+  /**
+   * Mint a one-command ticket that seats this person's agents (one identity per host type) in the given councils.
+   * The ticket is a secret: it contains the seed every agent key is derived from.
+   */
+  createTicket(groupIds: string[]): string {
+    if (this.kind !== 'human') throw new KurultayError('Only people can create agent tickets')
+    const seed = randomHex(32)
+    const ticketId = randomHex(6)
+    const agents = AGENT_HOSTS.map((host) => ({ host, ...deriveAgent(seed, host) }))
+    const att = attestMany(this.sk, agents.map((a) => ({ pk: a.pk, label: a.host })), this.name)
+    const groups = groupIds
+      .map((id) => this.state.groups[id])
+      .filter(Boolean)
+      .map((g) => ({
+        groupId: g.id,
+        name: g.roster.name,
+        relays: g.relays,
+        admins: g.roster.admins.map((pk) => ({ pubkey: pk, inbox: g.roster.members[pk]?.inbox })).filter((a): a is { pubkey: string; inbox: string } => !!a.inbox),
+      }))
+    const tickets = (this.state.tickets ??= {})
+    tickets[ticketId] = { ticketId, createdAt: now(), groups: groups.map((g) => g.groupId), agents: Object.fromEntries(agents.map((a) => [a.pk, a.host])) }
+    // recognise these agents as mine: approvals they request for other councils come here
+    for (const a of agents) this.state.agents[a.pk] = { pubkey: a.pk, label: a.host, inbox: a.inbox, attestation: att, pairedAt: now() }
+    this.changed('ticket')
+    const ticket: AgentTicket = { t: 'ticket', v: 1, id: ticketId, seed, owner: { pubkey: this.pubkey, name: this.name, inbox: this.state.inbox, relays: this.baseRelays }, att, groups }
+    return encodeTicket(ticket)
+  }
+
+  /** Agents of a ticket that have taken a seat somewhere (for the app's live status). */
+  ticketProgress(ticketId: string) {
+    const t = this.state.tickets?.[ticketId]
+    if (!t) return []
+    const out: { pubkey: string; host: string; name: string; groupId: string }[] = []
+    for (const gid of t.groups) {
+      const g = this.state.groups[gid]
+      if (!g) continue
+      for (const pk of Object.keys(t.agents)) if (g.roster.members[pk]) out.push({ pubkey: pk, host: t.agents[pk], name: g.roster.members[pk].name, groupId: gid })
+    }
+    return out
+  }
+
+  /** Build the starting identity and state for one host of a ticket (used by the CLI). */
+  static fromTicket(ticket: AgentTicket, host: string, existing?: State | null): { sk: Uint8Array; pubkey: string; state: State } {
+    const a = deriveAgent(ticket.seed, host)
+    const state: State = existing && existing.inbox === a.inbox ? existing : { ...emptyState(), inbox: a.inbox }
+    state.owner = { pubkey: ticket.owner.pubkey, name: ticket.owner.name, inbox: ticket.owner.inbox, relays: ticket.owner.relays, attestation: ticket.att }
+    for (const g of ticket.groups) {
+      if (state.groups[g.groupId] || !g.admins.length) continue
+      if (Object.values(state.pendingJoins).some((p) => p.link.groupId === g.groupId)) continue
+      const reqId = randomHex(8)
+      state.pendingJoins[reqId] = {
+        reqId,
+        via: 'ticket',
+        admins: g.admins,
+        status: 'awaiting-admin',
+        createdAt: now(),
+        link: { t: 'invite', groupId: g.groupId, name: g.name, relays: g.relays, admin: g.admins[0].pubkey, adminInbox: g.admins[0].inbox, inviteId: '', secret: '', expiresAt: now() + 30 * 86400 },
+      }
+    }
+    return { sk: a.sk, pubkey: a.pk, state }
   }
 
   // ------------------------------------------------------------------ pairing

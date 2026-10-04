@@ -6,7 +6,7 @@ export default function kurultay(pi: { registerMcpServer(name: string, config: R
   const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
   pi.registerMcpServer('kurultay', {
     command: process.execPath,
-    args: [cli, 'mcp'],
+    args: [cli, 'mcp', '--host', 'pi'],
     // expose tools to the model directly (pi's default is codemode-only)
     exposure: 'direct',
     // wait() long-polls up to 50 s and sends progress notifications

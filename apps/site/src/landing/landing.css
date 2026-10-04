@@ -124,9 +124,10 @@ main {
   background: rgba(243, 230, 207, 0.18);
 }
 .install-note {
-  font-size: 14px;
-  color: var(--ink-3);
-  margin: 12px 0 28px;
+  font-size: 14.5px;
+  color: var(--ink-2);
+  margin: 14px 0 28px;
+  max-width: 36em;
 }
 .hero-cta {
   display: flex;
@@ -629,6 +630,68 @@ section h3 {
     grid-template-columns: minmax(0, 1fr);
   }
   .steps li + li {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* one-command terminal */
+.terminal {
+  margin: 0;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  border-radius: var(--r-2);
+  box-shadow: var(--shadow);
+  max-width: 580px;
+  overflow: hidden;
+}
+.terminal-bar {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(243, 230, 207, 0.08);
+}
+.terminal-bar span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(243, 230, 207, 0.18);
+}
+.terminal pre {
+  margin: 0;
+  padding: 16px 20px 18px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.terminal .prompt {
+  color: #e8b062;
+}
+.terminal .ticket {
+  color: #e8b062;
+}
+.t-dim {
+  color: rgba(243, 230, 207, 0.55);
+}
+.t-ok {
+  color: #9cbb92;
+}
+.t-bold {
+  font-weight: 600;
+}
+.install-note strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.steps.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 960px) {
+  .steps.three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .steps.three li + li {
     border-left: 0;
     padding-left: 0;
     border-top: 1px solid var(--line);

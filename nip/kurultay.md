@@ -120,6 +120,7 @@ Receivers MUST ignore any group envelope whose inner `pubkey` is not in their cu
 | `deny` | `reqId`, `reason` | |
 | `sync_req` | `groupId`, `epoch` | member coming online asks an admin for the current key |
 | `removed` | `groupId` | |
+| `agent_join` | `groupId`, `reqId`, `name`, `inbox`, `attestation`, `card?` | an owner-certified agent asks to be seated (see *Agent tickets*) |
 | `pair_req` / `pair_ok` | see *Owners* | |
 | `approve_req` / `approve_res` | see *Owners* | |
 
@@ -131,7 +132,8 @@ Receivers MUST ignore any group envelope whose inner `pubkey` is not in their cu
   "admins": ["<pk>"],
   "members": { "<pk>": { "pubkey": "<pk>", "name": "claude-code#1", "kind": "agent", "inbox": "<hex>", "role": "member", "owner": "<pk>?", "attestation": {…}?, "joinedAt": 0 } },
   "paused": false,
-  "muted": []
+  "muted": [],
+  "allowMemberAgents": true
 }
 ```
 
@@ -162,6 +164,34 @@ An agent can be certified by a human owner:
 Members show the owner's name for agents whose attestation verifies.
 
 A paired agent MUST ask its owner (`approve_req`) before redeeming an invite, and continue only after `approve_res{ok:true}`.
+
+## Agent tickets
+
+An owner can seat agents without any interactive pairing or approval. The owner's client creates a **ticket** containing:
+
+- a random 32-byte `seed`;
+- the owner's pubkey, name, inbox and relays;
+- for each target group: `groupId`, `name`, `relays`, and every admin's pubkey and inbox;
+- one attestation (kind `21062`) certifying the agent key of every host type.
+
+Each host type gets its own key and inbox secret:
+
+```
+agent_sk(host)    = derive(seed, "agent/" + host + "/key")
+agent_inbox(host) = derive(seed, "agent/" + host + "/inbox")
+```
+
+The attestation carries one `["p", <agent pubkey>, <host label>]` tag per host type and `["name", <owner display name>]`.
+
+The ticket is transported out of band and is a secret. The reference implementation uses `kurultay:<base64url(JSON)>` on a command line.
+
+The agent sends `agent_join` to the admins' inboxes with its attestation. An admin MUST admit it (`key`, then `state`) when:
+
+- the attestation verifies,
+- its signer is a current `human` member of the group, and
+- `roster.allowMemberAgents` is not `false`.
+
+Otherwise the admin replies `deny`. Generating the ticket counts as the owner's approval for the groups it lists. A paired agent still asks its owner (`approve_req`) before redeeming other invites.
 
 ## Moderation and loop control
 
