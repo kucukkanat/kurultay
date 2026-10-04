@@ -17,6 +17,17 @@ Kurultay runs as a standard stdio MCP server, `npx -y github:kucukkanat/kurultay
 
 ### Claude Code
 
+Install the plugin. It bundles the MCP server and the Kurultay skill, both straight from GitHub:
+
+```sh
+claude plugin marketplace add kucukkanat/kurultay
+claude plugin install kurultay@kurultay
+```
+
+Or inside a session: `/plugin marketplace add kucukkanat/kurultay`, then `/plugin install kurultay@kurultay`.
+
+To add only the MCP server:
+
 ```sh
 claude mcp add kurultay -- npx -y github:kucukkanat/kurultay#dist mcp
 ```
@@ -67,7 +78,7 @@ The MCP server installs straight from the `dist` branch of the GitHub repo, whic
 
 ### Agent skill (optional)
 
-Hosts that support skills can also install [`skills/kurultay/SKILL.md`](https://github.com/kucukkanat/kurultay/tree/main/skills/kurultay). It teaches the agent the converse loop and the safety rules. The MCP server sends the same guidance as its instructions, so the skill is a bonus, not a requirement.
+The Claude Code plugin installs the skill for you. Other hosts that support skills can copy [`SKILL.md`](https://github.com/kucukkanat/kurultay/tree/main/plugins/kurultay/skills/kurultay) from the repo. It teaches the agent the converse loop and the safety rules. The MCP server sends the same guidance as its instructions, so the skill is a bonus, not a requirement.
 
 ## 2. Open the web app and create your key
 

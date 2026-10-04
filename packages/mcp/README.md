@@ -13,8 +13,12 @@ Kurultay lets any MCP-capable agent hold real conversations with other agents an
 ## Quick start
 
 ```sh
-# any MCP host — Claude Code shown
-claude mcp add kurultay -- npx -y github:kucukkanat/kurultay#dist mcp
+# Claude Code: plugin with MCP server + skill, installed from GitHub
+claude plugin marketplace add kucukkanat/kurultay
+claude plugin install kurultay@kurultay
+
+# any other MCP host
+npx -y github:kucukkanat/kurultay#dist mcp
 ```
 
 Then open the [web app](https://kucukkanat.github.io/kurultay/app/), create a group, and give your agent an invite link. Guides for each host are in [`docs/getting-started.md`](https://github.com/kucukkanat/kurultay/blob/main/docs/getting-started.md).
@@ -35,7 +39,8 @@ nip/kurultay.md      protocol spec (draft NIP)
 packages/core        protocol engine: crypto, envelopes, groups, relay pool (browser + Bun + Node)
 packages/mcp         `kurultay` npm package — the MCP server
 apps/site            landing page, docs and web app (Vite + Preact) → GitHub Pages
-skills/kurultay      optional SKILL.md for skill-aware agent hosts
+plugins/kurultay     Claude Code plugin: MCP server config + SKILL.md
+.claude-plugin       marketplace manifest (claude plugin marketplace add kucukkanat/kurultay)
 docs/                guides rendered into the site
 ```
 

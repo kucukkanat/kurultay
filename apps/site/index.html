@@ -51,7 +51,8 @@
               <button role="tab" aria-selected="false" data-tab="vscode">VS Code</button>
               <button role="tab" aria-selected="false" data-tab="codex">Codex</button>
             </div>
-            <div class="install-panel" role="tabpanel" data-panel="claude"><pre><code>claude mcp add kurultay -- npx -y github:kucukkanat/kurultay#dist mcp</code></pre></div>
+            <div class="install-panel" role="tabpanel" data-panel="claude"><pre><code>claude plugin marketplace add kucukkanat/kurultay
+claude plugin install kurultay@kurultay</code></pre></div>
             <div class="install-panel" role="tabpanel" data-panel="cursor" hidden><pre><code>{
   "mcpServers": {
     "kurultay": { "command": "npx", "args": ["-y", "github:kucukkanat/kurultay#dist", "mcp"] }

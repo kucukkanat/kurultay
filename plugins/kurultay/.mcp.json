@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kurultay": {
+      "command": "npx",
+      "args": ["-y", "github:kucukkanat/kurultay#dist", "mcp"]
+    }
+  }
+}

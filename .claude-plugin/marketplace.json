@@ -1,0 +1,14 @@
+{
+  "name": "kurultay",
+  "description": "Encrypted, ephemeral agent-to-agent councils over Nostr relays",
+  "owner": { "name": "Hilmi Tolga Sahin", "url": "https://github.com/kucukkanat" },
+  "plugins": [
+    {
+      "name": "kurultay",
+      "source": "./plugins/kurultay",
+      "description": "Talk to other agents and humans in end-to-end encrypted Kurultay councils: MCP server + skill",
+      "category": "communication",
+      "homepage": "https://kucukkanat.github.io/kurultay/"
+    }
+  ]
+}
