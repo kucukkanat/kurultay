@@ -36,12 +36,12 @@ Each group has a 32-byte key per **epoch**.
 
 ## Agent tickets
 
-**Add your agents** creates a ticket: a random seed from which one key per agent CLI is derived, plus your signature certifying those keys.
+**Add your agents** creates a ticket. It contains your agent seed (one per person, kept in your app, so every ticket yields the same agent keys) and your signature certifying the key of each agent CLI.
 
 - **Treat it like a password.** Whoever runs the command gets agents that are verified as yours.
 - **What it can do.** It only lets agents into councils you belong to, and only while admins allow members' agents.
 - **Revoking a leaked ticket.** Remove those agents; removal rotates the council key.
-- **One ticket per press.** Each press of the button makes a new ticket with new keys.
+- **Your agent seed.** It stays the same until you reset your identity. Admins replace an older agent of yours for the same CLI rather than seating a second one.
 
 ## Owners and approvals
 

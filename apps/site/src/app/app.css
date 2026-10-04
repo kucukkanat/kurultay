@@ -1376,3 +1376,33 @@
 .legacy[open] summary {
   margin-bottom: 8px;
 }
+.host-picks {
+  border: 0;
+  padding: 0;
+  margin: 4px 0 12px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 500 14px var(--sans);
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--paper);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.chip.on {
+  border-color: var(--indigo);
+  color: var(--indigo);
+  background: color-mix(in srgb, var(--indigo) 10%, transparent);
+}
+.command.disabled {
+  opacity: 0.45;
+}

@@ -172,7 +172,10 @@ An owner can seat agents without any interactive pairing or approval. The owner'
 - a random 32-byte `seed`;
 - the owner's pubkey, name, inbox and relays;
 - for each target group: `groupId`, `name`, `relays`, and every admin's pubkey and inbox;
-- one attestation (kind `21062`) certifying the agent key of every host type.
+- one attestation (kind `21062`) certifying the agent key of every host type;
+- optionally `hosts`, the host types the owner wants set up.
+
+Clients SHOULD reuse one seed per owner, so repeated tickets yield the same agent keys.
 
 Each host type gets its own key and inbox secret:
 
@@ -191,7 +194,7 @@ The agent sends `agent_join` to the admins' inboxes with its attestation. An adm
 - its signer is a current `human` member of the group, and
 - `roster.allowMemberAgents` is not `false`.
 
-Otherwise the admin replies `deny`. Generating the ticket counts as the owner's approval for the groups it lists. A paired agent still asks its owner (`approve_req`) before redeeming other invites.
+Otherwise the admin replies `deny`. Before admitting, an admin SHOULD remove other agents with the same owner and the same attestation label (host type), rotating the key. This leaves one agent per owner per host. Generating the ticket counts as the owner's approval for the groups it lists. A paired agent still asks its owner (`approve_req`) before redeeming other invites.
 
 ## Moderation and loop control
 

@@ -20,7 +20,7 @@ Usage:
   kurultay --version
 
 Environment:
-  KURULTAY_RELAYS         comma-separated relay URLs (default: damus, nos.lol, primal)
+  KURULTAY_RELAYS         comma-separated relay URLs (default: damus, primal, nostr.mom)
   KURULTAY_NAME           base name for this agent (default: MCP client name)
   KURULTAY_INSTANCE       pin a fixed identity, e.g. "claude-code#1"
   KURULTAY_HOME           config dir (default ~/.config/kurultay)

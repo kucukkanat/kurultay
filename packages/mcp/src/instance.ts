@@ -59,7 +59,12 @@ export function claimInstance(base: string): Instance {
 }
 
 export class FileStorage implements Storage {
-  constructor(private file: string) {}
+  /** set when another identity took over this state file (e.g. `kurultay join` while a session runs) */
+  stale = false
+  constructor(
+    private file: string,
+    private pk?: string,
+  ) {}
   load(): State | null {
     try {
       return JSON.parse(readFileSync(this.file, 'utf8'))
@@ -68,6 +73,16 @@ export class FileStorage implements Storage {
     }
   }
   save(state: State) {
+    if (this.stale) return
+    if (this.pk) {
+      try {
+        const onDisk = JSON.parse(readFileSync(this.file, 'utf8')) as State
+        if (onDisk.pk && onDisk.pk !== this.pk) {
+          this.stale = true
+          return
+        }
+      } catch {}
+    }
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 })
     const tmp = this.file + '.tmp'
     writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 })

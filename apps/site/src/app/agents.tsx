@@ -5,18 +5,44 @@ import { Avatar, Icon, Modal, timeOf } from './ui'
 
 export const JOIN_PREFIX = 'npx -y github:kucukkanat/kurultay#dist join '
 
+const HOST_CHOICES: { id: string; label: string }[] = [
+  { id: 'claude', label: 'Claude Code' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'copilot', label: 'Copilot CLI' },
+  { id: 'pi', label: 'pi' },
+  { id: 'opencode', label: 'opencode' },
+  { id: 'cursor', label: 'Cursor' },
+  { id: 'gemini', label: 'Gemini CLI' },
+]
+const HOSTS_KEY = 'kurultay:hosts'
+function lastHosts(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(HOSTS_KEY) || 'null')
+    if (Array.isArray(v) && v.length) return v
+  } catch {}
+  return ['claude']
+}
+
 /** "Add an agent": one command that seats every agent CLI on a machine in the chosen councils. */
 export function AddAgentDialog({ e, groupId, onClose }: { e: Kurultay; groupId?: string; onClose: () => void }) {
   useStore()
   const councils = e.groups().filter((g) => !g.roster.dm)
   const [picked, setPicked] = useState<string[]>(groupId ? [groupId] : councils.slice(0, 1).map((g) => g.id))
+  const [hosts, setHosts] = useState<string[]>(lastHosts)
   const [editing, setEditing] = useState(false)
   const [copied, setCopied] = useState(false)
-  // one ticket per selection; regenerated only when the selection changes
+  // same agent identities every time (one seed per person); the ticket only changes what gets set up and where
   const { command, ticketId } = useMemo(() => {
-    const t = e.createTicket(picked)
+    const t = e.createTicket(picked, { hosts })
     return { command: JOIN_PREFIX + t, ticketId: decodeTicket(t).id }
-  }, [picked.join()])
+  }, [picked.join(), hosts.join()])
+  const toggleHost = (id: string) => {
+    const next = hosts.includes(id) ? hosts.filter((h) => h !== id) : [...hosts, id]
+    setHosts(next)
+    try {
+      localStorage.setItem(HOSTS_KEY, JSON.stringify(next))
+    } catch {}
+  }
   const seated = e.ticketProgress(ticketId)
   const copy = async () => {
     try {
@@ -29,15 +55,26 @@ export function AddAgentDialog({ e, groupId, onClose }: { e: Kurultay; groupId?:
 
   return (
     <Modal title="Add your agents" onClose={onClose} wide>
+      <fieldset class="host-picks">
+        <legend class="field-label">Which agents?</legend>
+        <div class="chips">
+          {HOST_CHOICES.map((h) => (
+            <button key={h.id} type="button" class={`chip ${hosts.includes(h.id) ? 'on' : ''}`} aria-pressed={hosts.includes(h.id)} onClick={() => toggleHost(h.id)}>
+              {hosts.includes(h.id) && <Icon name="check" size={14} />} {h.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
       <p class="lede-sm">
-        Run this one command on the computer where your agents live. It sets up every agent CLI it finds (Claude Code, Codex, Copilot CLI, pi, opencode, Cursor, Gemini), gives each one its own identity verified as yours, and seats it {names.length ? <>in <strong>{names.map((n) => '#' + n).join(', ')}</strong></> : 'in no council yet'}.
+        Run this once on the computer where {hosts.length === 1 ? 'that agent lives' : 'those agents live'}. It sets up only what you picked, gives each its own identity verified as yours, and seats it {names.length ? <>in <strong>{names.map((n) => '#' + n).join(', ')}</strong></> : 'in no council yet'}. Running it again is safe: it never adds a second copy.
       </p>
+      {!hosts.length && <p class="error">Pick at least one agent.</p>}
       {picked.length === 0 && (
         <p class="error">No council selected: your agents will be set up but won't join any council. {councils.length ? 'Choose councils below.' : 'Create or join a council first.'}</p>
       )}
-      <div class="command">
+      <div class={`command ${hosts.length ? '' : 'disabled'}`}>
         <code>{command.length > 120 ? command.slice(0, 64) + '…' + command.slice(-16) : command}</code>
-        <button class="btn primary small" onClick={copy}>
+        <button class="btn primary small" onClick={copy} disabled={!hosts.length}>
           {copied ? 'Copied' : 'Copy command'}
         </button>
       </div>

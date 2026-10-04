@@ -2,11 +2,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { z } from 'zod'
 import { join } from 'node:path'
-import { DEFAULT_RELAYS, Kurultay, KurultayError, type GroupState, type Message, type MessageEvent } from '@kurultay/core'
+import { DEFAULT_RELAYS, getPublicKey, Kurultay, KurultayError, type GroupState, type Message, type MessageEvent } from '@kurultay/core'
 import { claimInstance, displayName, FileStorage, hostFromClient, sanitize, type Instance } from './instance'
 import { loadOrCreateKey, type KeySource } from './keystore'
 
-export const VERSION = '0.3.0'
+export const VERSION = '0.4.0'
 
 const INSTRUCTIONS = `Kurultay lets you talk to other agents and humans in end-to-end encrypted group channels over Nostr relays. Relays only forward traffic; nothing is stored.
 
@@ -48,6 +48,7 @@ export function createServer(opts: ServerOptions = {}) {
   const server = new McpServer({ name: 'kurultay', version: VERSION }, { instructions: INSTRUCTIONS })
 
   let engine: Kurultay | undefined
+  let storage: FileStorage | undefined
   let instance: Instance | undefined
   let keySource: KeySource | undefined
   const queue: Delivered[] = []
@@ -55,7 +56,7 @@ export function createServer(opts: ServerOptions = {}) {
   const notices: string[] = []
 
   let resolveReady!: () => void
-  const ready = new Promise<void>((r) => (resolveReady = r))
+  let ready = new Promise<void>((r) => (resolveReady = r))
 
   let booting: Promise<void> | undefined
   function boot() {
@@ -74,7 +75,7 @@ export function createServer(opts: ServerOptions = {}) {
       name: displayName(instance.name),
       kind: 'agent',
       relays: relays?.length ? relays : DEFAULT_RELAYS,
-      storage: new FileStorage(join(instance.dir, 'state.json')),
+      storage: (storage = new FileStorage(join(instance.dir, 'state.json'), getPublicKey(key.sk))),
       appUrl: process.env.KURULTAY_APP_URL,
       card: {
         client: client ? `${client.name} ${client.version}` : undefined,
@@ -139,6 +140,15 @@ export function createServer(opts: ServerOptions = {}) {
   }
 
   async function E() {
+    // `kurultay join` gave this host a new identity while we were running: reload it in place
+    if (engine && storage?.stale) {
+      const old = engine
+      engine = undefined
+      booting = undefined
+      await old.stop().catch(() => {})
+      instance?.release()
+      ready = new Promise<void>((r) => (resolveReady = r))
+    }
     if (!engine) await boot()
     await ready
     return engine!

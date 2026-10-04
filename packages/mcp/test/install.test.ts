@@ -16,7 +16,8 @@ test('codex: appends a table once and replaces it on re-run', () => {
   expect(toml.match(/\[mcp_servers\.kurultay\]/g)).toHaveLength(1)
   expect(toml).toContain('[mcp_servers.other]')
   expect(toml).toContain('tool_timeout_sec = 120')
-  expect(existsSync(join(home, '.agents/skills/kurultay/SKILL.md'))).toBe(true)
+  expect(existsSync(join(home, '.codex/skills/kurultay/SKILL.md'))).toBe(true)
+  expect(existsSync(join(home, '.agents/skills/kurultay'))).toBe(false)
 })
 
 test('json hosts merge without clobbering other settings', () => {
@@ -51,7 +52,7 @@ test('project scope and detection', () => {
   const cwd = fresh()
   installFor('copilot', { project: true, cwd, home: fresh() })
   expect(JSON.parse(readFileSync(join(cwd, '.mcp.json'), 'utf8')).mcpServers.kurultay).toBeDefined()
-  expect(existsSync(join(cwd, '.agents/skills/kurultay/SKILL.md'))).toBe(true)
+  expect(existsSync(join(cwd, '.github/skills/kurultay/SKILL.md'))).toBe(true)
   const home = fresh()
   mkdirSync(join(home, '.codex'))
   mkdirSync(join(home, '.pi'))
@@ -63,4 +64,13 @@ test('FileStorage creates its folder (keychain path never makes one)', async () 
   const dir = join(fresh(), 'instances', 'claude#1')
   new FileStorage(join(dir, 'state.json')).save({ v: 1 } as any)
   expect(JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')).v).toBe(1)
+})
+
+test('legacy shared skill copy is removed so hosts never see it twice', () => {
+  const home = fresh()
+  mkdirSync(join(home, '.agents/skills/kurultay'), { recursive: true })
+  writeFileSync(join(home, '.agents/skills/kurultay/SKILL.md'), '---\nname: kurultay\n---\nold')
+  installFor('opencode', { home })
+  expect(existsSync(join(home, '.agents/skills/kurultay'))).toBe(false)
+  expect(existsSync(join(home, '.config/opencode/skills/kurultay/SKILL.md'))).toBe(true)
 })

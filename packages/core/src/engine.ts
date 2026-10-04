@@ -192,7 +192,8 @@ export class Kurultay extends Emitter<EngineEvents> {
     this.started = true
     const loaded = await this.storage.load()
     if (loaded && loaded.v === 1) this.state = { ...emptyState(), ...loaded }
-    else this.persist()
+    this.state.pk = this.pubkey
+    this.persist()
     this.pool.setRelays(this.allRelays())
     this.resubscribe()
     this.syncAll()
@@ -546,7 +547,14 @@ export class Kurultay extends Emitter<EngineEvents> {
       void this.sendInbox(from, env.inbox, { type: 'deny', reqId: env.reqId, reason: 'this council does not accept members’ agents' })
       return
     }
-    this.admit(g.id, { pubkey: from, name: String(env.name).slice(0, 64), kind: 'agent', inbox: env.inbox, owner: att.owner, attestation: env.attestation, card: env.card }, env.reqId)
+    // one agent per owner and host: an older identity for the same host (e.g. from an earlier ticket) is replaced
+    const stale = Object.values(g.roster.members).filter((m) => m.kind === 'agent' && m.pubkey !== from && m.owner === att.owner && checkAttestation(m.attestation, m.pubkey)?.label === att.label)
+    const admitNow = () => this.admit(g.id, { pubkey: from, name: String(env.name).slice(0, 64), kind: 'agent', inbox: env.inbox, owner: att.owner, attestation: env.attestation, card: env.card }, env.reqId)
+    if (!stale.length) return admitNow()
+    void (async () => {
+      for (const m of stale) await this.removeMember(g.id, m.pubkey, 'was replaced by a newer identity')
+      admitNow()
+    })()
   }
 
   private onKey(from: string, env: Extract<Envelope, { type: 'key' }>) {
@@ -960,9 +968,10 @@ export class Kurultay extends Emitter<EngineEvents> {
    * Mint a one-command ticket that seats this person's agents (one identity per host type) in the given councils.
    * The ticket is a secret: it contains the seed every agent key is derived from.
    */
-  createTicket(groupIds: string[]): string {
+  createTicket(groupIds: string[], opts: { hosts?: string[] } = {}): string {
     if (this.kind !== 'human') throw new KurultayError('Only people can create agent tickets')
-    const seed = randomHex(32)
+    // one seed per person: every ticket yields the same agent identities, so running it again never adds duplicates
+    const seed = (this.state.agentSeed ??= randomHex(32))
     const ticketId = randomHex(6)
     const agents = AGENT_HOSTS.map((host) => ({ host, ...deriveAgent(seed, host) }))
     const att = attestMany(this.sk, agents.map((a) => ({ pk: a.pk, label: a.host })), this.name)
@@ -980,7 +989,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     // recognise these agents as mine: approvals they request for other councils come here
     for (const a of agents) this.state.agents[a.pk] = { pubkey: a.pk, label: a.host, inbox: a.inbox, attestation: att, pairedAt: now() }
     this.changed('ticket')
-    const ticket: AgentTicket = { t: 'ticket', v: 1, id: ticketId, seed, owner: { pubkey: this.pubkey, name: this.name, inbox: this.state.inbox, relays: this.baseRelays }, att, groups }
+    const ticket: AgentTicket = { t: 'ticket', v: 1, id: ticketId, seed, owner: { pubkey: this.pubkey, name: this.name, inbox: this.state.inbox, relays: this.baseRelays }, att, groups, hosts: opts.hosts?.length ? opts.hosts : undefined }
     return encodeTicket(ticket)
   }
 

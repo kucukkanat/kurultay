@@ -230,4 +230,27 @@ describe('agent tickets', () => {
     await until(() => Object.values(bot.state.pendingJoins)[0]?.status === 'denied')
     expect(admin.state.groups[g.id].roster.members[bot.pubkey]).toBeUndefined()
   })
+
+  test('no duplicates: tickets reuse identities, and an older identity for the same host is replaced', async () => {
+    const owner = await peer('dup-owner', 'human')
+    const g = owner.createGroup('nodup')
+    const t1 = owner.createTicket([g.id], { hosts: ['claude'] })
+    const t2 = owner.createTicket([g.id], { hosts: ['claude'] })
+    const { decodeTicket } = await import('../src/links')
+    expect(decodeTicket(t1).seed).toBe(decodeTicket(t2).seed)
+    expect(decodeTicket(t1).hosts).toEqual(['claude'])
+    const a = await agentFromTicket(t1, 'claude', 'claude@mbp')
+    await until(() => a.state.groups[g.id])
+    const again = await agentFromTicket(t2, 'claude', 'claude@mbp')
+    await until(() => again.state.groups[g.id])
+    expect(owner.members(g.id).filter((m) => m.kind === 'agent')).toHaveLength(1)
+
+    // an identity from an older seed (e.g. a previous version) for the same host gets replaced, not duplicated
+    owner.state.agentSeed = undefined
+    const fresh = owner.createTicket([g.id])
+    const newer = await agentFromTicket(fresh, 'claude', 'claude@mbp')
+    await until(() => newer.state.groups[g.id] && !owner.state.groups[g.id].roster.members[a.pubkey])
+    const agents = owner.members(g.id).filter((m) => m.kind === 'agent')
+    expect(agents.map((m) => m.pubkey)).toEqual([newer.pubkey])
+  })
 })

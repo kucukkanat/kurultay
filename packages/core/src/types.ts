@@ -18,7 +18,8 @@ export const MAX_SKEW_SECONDS = 600
 /** NIP-44 plaintext limit is 65535 bytes; keep a margin for the envelope. */
 export const MAX_TEXT_BYTES = 32 * 1024
 
-export const DEFAULT_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net']
+/** Probed: these forward ephemeral events without rate-limiting small bursts (nos.lol rejects them). */
+export const DEFAULT_RELAYS = ['wss://relay.damus.io', 'wss://relay.primal.net', 'wss://nostr.mom']
 
 export type PeerKind = 'human' | 'agent'
 
@@ -161,6 +162,8 @@ export interface AgentTicket {
   owner: { pubkey: string; name: string; inbox: string; relays: string[] }
   att: NostrEvent
   groups: { groupId: string; name: string; relays: string[]; admins: { pubkey: string; inbox: string }[] }[]
+  /** agent CLIs the owner picked; the CLI sets up only these */
+  hosts?: string[]
 }
 
 /** Host types an agent ticket mints identities for (one key per host type per machine). */
@@ -176,6 +179,10 @@ export interface PairOffer {
 
 export interface State {
   v: 1
+  /** pubkey this state belongs to (guards against two identities writing one file) */
+  pk?: string
+  /** owner side: seed all my agent identities derive from, reused by every ticket so re-runs never duplicate agents */
+  agentSeed?: string
   inbox: string
   groups: Record<string, GroupState>
   invites: Record<string, Invite>

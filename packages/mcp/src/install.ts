@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import skillMd from '../../../plugins/kurultay/skills/kurultay/SKILL.md' with { type: 'text' }
@@ -7,10 +7,8 @@ import skillMd from '../../../plugins/kurultay/skills/kurultay/SKILL.md' with { 
 const userHome = () => process.env.HOME || process.env.USERPROFILE || homedir()
 
 export const PACKAGE_SPEC = 'github:kucukkanat/kurultay#dist'
-const COMMAND = 'npx'
+let COMMAND = 'npx'
 let ARGS = ['-y', PACKAGE_SPEC, 'mcp']
-/** the server gets `--host <host>` so it picks the identity an agent ticket set up for that host */
-const argsFor = (host: Host) => [...ARGS, '--host', host]
 const DESCRIPTION = 'Kurultay: encrypted agent-to-agent councils over Nostr'
 
 export const HOSTS = ['claude', 'codex', 'copilot', 'pi', 'opencode', 'cursor', 'gemini', 'vscode'] as const
@@ -22,6 +20,11 @@ interface Opts {
   skill: boolean
   cwd: string
   home: string
+  /** run a locally installed copy (`node <runtime> mcp`) instead of npx — what `kurultay join` does */
+  runtime?: string
+  node?: string
+  /** uninstall a Kurultay plugin for this host so only one server runs (join) */
+  replacePlugin?: boolean
 }
 
 interface Step {
@@ -84,7 +87,7 @@ function codexToml(o: Opts): Step {
   const path = o.project ? join(o.cwd, '.codex/config.toml') : join(o.home, '.codex/config.toml')
   const block = [
     '[mcp_servers.kurultay]',
-    `command = "${COMMAND}"`,
+    `command = ${JSON.stringify(COMMAND)}`,
     `args = [${ARGS.map((a) => JSON.stringify(a)).join(', ')}]`,
     '# first start fetches from GitHub; wait() long-polls up to 50 s',
     'startup_timeout_sec = 60',
@@ -105,6 +108,8 @@ function claudeMcp(o: Opts): Step {
   const args = ['mcp', 'add', '--scope', o.project ? 'project' : 'user', 'kurultay', '--', COMMAND, ...ARGS]
   const cmd = `claude ${args.map((a) => (/[#\s]/.test(a) ? JSON.stringify(a) : a)).join(' ')}`
   if (o.print) return { what: 'MCP server', status: 'printed', detail: `${cmd}\n\nor install the plugin (MCP server + skill):\n  claude plugin marketplace add kucukkanat/kurultay\n  claude plugin install kurultay@kurultay` }
+  // replace any earlier entry (e.g. an npx-based one) so there is exactly one kurultay server
+  spawnSync('claude', ['mcp', 'remove', 'kurultay', '--scope', o.project ? 'project' : 'user'], { encoding: 'utf8' })
   const r = spawnSync('claude', args, { encoding: 'utf8' })
   if (r.error) return { what: 'MCP server', status: 'manual', detail: `Claude Code CLI not found. Run:\n  ${cmd}` }
   if (r.status !== 0 && /already exists/i.test(r.stderr + r.stdout)) return { what: 'MCP server', status: 'unchanged', detail: 'kurultay already configured in Claude Code' }
@@ -112,20 +117,27 @@ function claudeMcp(o: Opts): Step {
   return { what: 'MCP server', status: 'written', detail: o.project ? '.mcp.json (project scope)' : 'Claude Code user scope' }
 }
 
+const SKILL_DIRS: Partial<Record<Host, { user: string; project: string }>> = {
+  claude: { user: '.claude/skills', project: '.claude/skills' },
+  codex: { user: '.codex/skills', project: '.codex/skills' },
+  copilot: { user: '.copilot/skills', project: '.github/skills' },
+  pi: { user: '.pi/agent/skills', project: '.pi/skills' },
+  opencode: { user: '.config/opencode/skills', project: '.opencode/skills' },
+}
+
+/** Each host gets the skill in its own folder, so a host never sees it twice. */
 function skillPath(host: Host, o: Opts): string | null {
-  const base = o.project ? o.cwd : o.home
-  switch (host) {
-    case 'claude':
-      return join(base, '.claude/skills/kurultay/SKILL.md')
-    // Codex, Copilot CLI, pi and opencode all read the shared Agent Skills folder
-    case 'codex':
-    case 'copilot':
-    case 'pi':
-    case 'opencode':
-      return join(base, '.agents/skills/kurultay/SKILL.md')
-    default:
-      return null
-  }
+  const d = SKILL_DIRS[host]
+  if (!d) return null
+  return join(o.project ? o.cwd : o.home, o.project ? d.project : d.user, 'kurultay/SKILL.md')
+}
+
+/** Older versions put the skill in the shared ~/.agents/skills, which several hosts read; remove that copy. */
+function removeLegacySharedSkill(o: Opts) {
+  const p = join(o.project ? o.cwd : o.home, '.agents/skills/kurultay')
+  try {
+    if (readFileSync(join(p, 'SKILL.md'), 'utf8').includes('name: kurultay')) rmSync(p, { recursive: true, force: true })
+  } catch {}
 }
 
 function installSkill(host: Host, o: Opts): Step | null {
@@ -133,6 +145,7 @@ function installSkill(host: Host, o: Opts): Step | null {
   const path = skillPath(host, o)
   if (!path) return { what: 'skill', status: 'skipped', detail: `${host} has no Agent Skills folder; the MCP server's built-in instructions cover usage.` }
   if (o.print) return { what: 'skill', path, status: 'printed', detail: `copy SKILL.md to ${path}` }
+  removeLegacySharedSkill(o)
   if (existsSync(path) && readFileSync(path, 'utf8') === skillMd) return { what: 'skill', path, status: 'unchanged' }
   writeFile(path, skillMd)
   return { what: 'skill', path, status: 'written' }
@@ -140,13 +153,42 @@ function installSkill(host: Host, o: Opts): Step | null {
 
 export function installFor(host: Host, opts: Partial<Opts> = {}): Step[] {
   const o: Opts = { project: false, print: false, skill: true, cwd: process.cwd(), home: userHome(), ...opts }
-  const saved = ARGS
-  ARGS = argsFor(host)
-  try {
-    return installForInner(host, o)
-  } finally {
-    ARGS = saved
+  const saved = [COMMAND, ARGS] as const
+  // the server gets `--host <host>` so it picks the identity an agent ticket set up for that host
+  if (o.runtime) {
+    COMMAND = o.node || process.execPath
+    ARGS = [o.runtime, 'mcp', '--host', host]
+  } else {
+    ARGS = ['-y', PACKAGE_SPEC, 'mcp', '--host', host]
   }
+  try {
+    const steps: Step[] = []
+    if (o.replacePlugin && !o.print) {
+      const r = removePlugin(host)
+      if (r) steps.push(r)
+    }
+    return [...steps, ...installForInner(host, o)]
+  } finally {
+    ;[COMMAND, ARGS] = [saved[0], saved[1] as string[]]
+  }
+}
+
+const PLUGIN_CLI: Partial<Record<Host, { bin: string; list: string[]; remove: string[] }>> = {
+  claude: { bin: 'claude', list: ['plugin', 'list'], remove: ['plugin', 'uninstall', 'kurultay@kurultay'] },
+  codex: { bin: 'codex', list: ['plugin', 'list'], remove: ['plugin', 'remove', 'kurultay@kurultay'] },
+  copilot: { bin: 'copilot', list: ['plugin', 'list'], remove: ['plugin', 'uninstall', 'kurultay@kurultay'] },
+}
+
+/** A Kurultay plugin and a direct config would run two servers (two agents). Keep only the direct one. */
+function removePlugin(host: Host): Step | null {
+  const c = PLUGIN_CLI[host]
+  if (!c) return null
+  const list = spawnSync(c.bin, c.list, { encoding: 'utf8', timeout: 30_000 })
+  if (list.error || !/kurultay@kurultay/.test((list.stdout || '') + (list.stderr || ''))) return null
+  const r = spawnSync(c.bin, c.remove, { encoding: 'utf8', timeout: 60_000 })
+  return r.status === 0
+    ? { what: 'plugin', status: 'written', detail: 'replaced the kurultay plugin with a direct install (one server, one agent)' }
+    : { what: 'plugin', status: 'manual', detail: `Remove the old plugin to avoid a second agent:\n  ${c.bin} ${c.remove.join(' ')}` }
 }
 
 /** Claude Code plugin already provides the server (and finds its identity via the client name). */
