@@ -32,10 +32,10 @@ export function startTestRelay(port = 0): TestRelay {
   const clients = new Set<WS>()
   const observed: NostrEvent[] = []
   const stored: NostrEvent[] = []
-  const server = Bun.serve<{ subs: Map<string, Filter> }, {}>({
+  const server = Bun.serve({
     port,
     fetch(req, srv) {
-      if (srv.upgrade(req, { data: { subs: new Map() } })) return
+      if ((srv as any).upgrade(req, { data: { subs: new Map<string, Filter>() } })) return
       return new Response('kurultay test relay')
     },
     websocket: {
@@ -45,7 +45,7 @@ export function startTestRelay(port = 0): TestRelay {
       close(ws) {
         clients.delete(ws as unknown as WS)
       },
-      message(ws, raw) {
+      message(ws: any, raw) {
         let msg: unknown[]
         try {
           msg = JSON.parse(String(raw))
