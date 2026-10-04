@@ -3,7 +3,9 @@ import { decodeTicket, shortKey, type Kurultay } from '@kurultay/core'
 import { useStore } from './store'
 import { Avatar, Icon, Modal, timeOf } from './ui'
 
-export const JOIN_PREFIX = 'npx -y github:kucukkanat/kurultay#dist join '
+/** pinned to the exact build CI published, so npx can't serve an older cached copy */
+export const DIST_REF: string = (import.meta as any).env?.VITE_DIST_REF || 'dist'
+export const JOIN_PREFIX = `npx -y github:kucukkanat/kurultay#${DIST_REF} join `
 
 const HOST_CHOICES: { id: string; label: string }[] = [
   { id: 'claude', label: 'Claude Code' },

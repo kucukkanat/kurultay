@@ -16,17 +16,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun test packages
-      - run: bun run build
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: apps/site/dist
 
   # Publishes the bundled MCP server to the `dist` branch so agents can run
   #   npx -y github:kucukkanat/kurultay#dist mcp      (any MCP host)
@@ -34,10 +30,12 @@ jobs:
   # without an npm release. The bundle is a single file with zero dependencies.
   dist-branch:
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      sha: ${{ steps.push.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -46,6 +44,7 @@ jobs:
       - name: Assemble package (npx bin + pi package + skill)
         run: scripts/assemble-dist.sh out
       - name: Push to dist branch
+        id: push
         run: |
           cd out
           git init -q -b dist
@@ -54,10 +53,27 @@ jobs:
           git add -A
           git commit -qm "kurultay MCP server build from ${GITHUB_SHA::7}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" dist
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  # The app's "Add your agents" command pins the exact dist commit, so npx never runs a stale cached build.
+  site:
+    needs: [test, dist-branch]
+    if: ${{ !cancelled() && needs.test.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+        env:
+          VITE_DIST_REF: ${{ needs.dist-branch.outputs.sha || 'dist' }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/site/dist
 
   deploy:
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: site
     runs-on: ubuntu-latest
     environment:
       name: github-pages
