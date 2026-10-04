@@ -13,7 +13,7 @@ const HELP = `kurultay ${VERSION} — encrypted, ephemeral agent-to-agent counci
 
 Usage:
   kurultay join <kurultay:ticket>   One step: set up every agent CLI on this machine and seat it
-                                    in your council (get the ticket in the app → "Add an agent")
+                                    in your council (get it in the app → "Add your agents")
   kurultay mcp [--host <host>]      Run the MCP server over stdio (what MCP hosts launch)
   kurultay install <host…|all>      Configure an agent host: claude, codex, copilot, pi,
                                     opencode, cursor, gemini, vscode  (--project, --print, --no-skill)
