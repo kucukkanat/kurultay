@@ -51,22 +51,22 @@
               <button role="tab" aria-selected="false" data-tab="vscode">VS Code</button>
               <button role="tab" aria-selected="false" data-tab="codex">Codex</button>
             </div>
-            <div class="install-panel" role="tabpanel" data-panel="claude"><pre><code>claude mcp add kurultay -- npx -y kurultay mcp</code></pre></div>
+            <div class="install-panel" role="tabpanel" data-panel="claude"><pre><code>claude mcp add kurultay -- npx -y github:kucukkanat/kurultay#dist mcp</code></pre></div>
             <div class="install-panel" role="tabpanel" data-panel="cursor" hidden><pre><code>{
   "mcpServers": {
-    "kurultay": { "command": "npx", "args": ["-y", "kurultay", "mcp"] }
+    "kurultay": { "command": "npx", "args": ["-y", "github:kucukkanat/kurultay#dist", "mcp"] }
   }
 }</code></pre></div>
             <div class="install-panel" role="tabpanel" data-panel="vscode" hidden><pre><code>// .vscode/mcp.json
 {
   "servers": {
-    "kurultay": { "type": "stdio", "command": "npx", "args": ["-y", "kurultay", "mcp"] }
+    "kurultay": { "type": "stdio", "command": "npx", "args": ["-y", "github:kucukkanat/kurultay#dist", "mcp"] }
   }
 }</code></pre></div>
             <div class="install-panel" role="tabpanel" data-panel="codex" hidden><pre><code># ~/.codex/config.toml
 [mcp_servers.kurultay]
 command = "npx"
-args = ["-y", "kurultay", "mcp"]</code></pre></div>
+args = ["-y", "github:kucukkanat/kurultay#dist", "mcp"]</code></pre></div>
             <button class="copy" type="button" data-copy-active>Copy</button>
           </div>
           <p class="install-note">Works with any agent that speaks MCP. <a href="docs/getting-started.html">Setup for other hosts</a></p>

@@ -13,12 +13,12 @@ Kurultay has three parts:
 
 ## 1. Add the MCP server to your agent
 
-Kurultay runs as a standard stdio MCP server, `npx -y kurultay mcp`, and needs Node 20+ or Bun.
+Kurultay runs as a standard stdio MCP server, `npx -y github:kucukkanat/kurultay#dist mcp`, and needs Node 20+ with git available.
 
 ### Claude Code
 
 ```sh
-claude mcp add kurultay -- npx -y kurultay mcp
+claude mcp add kurultay -- npx -y github:kucukkanat/kurultay#dist mcp
 ```
 
 ### Claude Desktop, Cursor, Windsurf, Gemini CLI
@@ -34,7 +34,7 @@ Add this to the host's MCP config:
 ```json
 {
   "mcpServers": {
-    "kurultay": { "command": "npx", "args": ["-y", "kurultay", "mcp"] }
+    "kurultay": { "command": "npx", "args": ["-y", "github:kucukkanat/kurultay#dist", "mcp"] }
   }
 }
 ```
@@ -46,7 +46,7 @@ Add this to the host's MCP config:
 ```json
 {
   "servers": {
-    "kurultay": { "type": "stdio", "command": "npx", "args": ["-y", "kurultay", "mcp"] }
+    "kurultay": { "type": "stdio", "command": "npx", "args": ["-y", "github:kucukkanat/kurultay#dist", "mcp"] }
   }
 }
 ```
@@ -58,12 +58,12 @@ Add this to the host's MCP config:
 ```toml
 [mcp_servers.kurultay]
 command = "npx"
-args = ["-y", "kurultay", "mcp"]
+args = ["-y", "github:kucukkanat/kurultay#dist", "mcp"]
 ```
 
-### Bun users
+### Where the package comes from
 
-You can use `bunx kurultay mcp` in place of `npx -y kurultay mcp`.
+The MCP server installs straight from the `dist` branch of the GitHub repo, which CI rebuilds on every push to `main`. It is a single JavaScript file with no dependencies, so the first start takes a few seconds and later starts use npm's cache. To pin a version, replace `#dist` with a commit hash from that branch.
 
 ### Agent skill (optional)
 

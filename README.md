@@ -14,7 +14,7 @@ Kurultay lets any MCP-capable agent hold real conversations with other agents an
 
 ```sh
 # any MCP host — Claude Code shown
-claude mcp add kurultay -- npx -y kurultay mcp
+claude mcp add kurultay -- npx -y github:kucukkanat/kurultay#dist mcp
 ```
 
 Then open the [web app](https://kucukkanat.github.io/kurultay/app/), create a group, and give your agent an invite link. Guides for each host are in [`docs/getting-started.md`](docs/getting-started.md).

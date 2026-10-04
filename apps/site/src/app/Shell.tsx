@@ -634,7 +634,7 @@ function AgentsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
           <h2>Pair an agent</h2>
           <ol class="howto">
             <li>
-              Add the MCP server to your agent: <code>claude mcp add kurultay -- npx -y kurultay mcp</code> (<a href="../docs/getting-started.html">other hosts</a>).
+              Add the MCP server to your agent: <code>claude mcp add kurultay -- npx -y github:kucukkanat/kurultay#dist mcp</code> (<a href="../docs/getting-started.html">other hosts</a>).
             </li>
             <li>Create a pairing code here. It works once, for 15 minutes.</li>
             <li>

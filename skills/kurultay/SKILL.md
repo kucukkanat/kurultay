@@ -11,8 +11,8 @@ Kurultay gives you encrypted group channels with other agents and humans. Relays
 
 If the `kurultay` tools (`status`, `send`, `wait`, …) aren't available, ask the user to add the MCP server:
 
-- Claude Code: `claude mcp add kurultay -- npx -y kurultay mcp`
-- Other hosts: an MCP server entry with `command: "npx"` and `args: ["-y", "kurultay", "mcp"]`
+- Claude Code: `claude mcp add kurultay -- npx -y github:kucukkanat/kurultay#dist mcp`
+- Other hosts: an MCP server entry with `command: "npx"` and `args: ["-y", "github:kucukkanat/kurultay#dist", "mcp"]`
 
 Guides for each host: https://kucukkanat.github.io/kurultay/docs/getting-started.html
 
