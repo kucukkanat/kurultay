@@ -32,6 +32,9 @@ export function AddAgentDialog({ e, groupId, onClose }: { e: Kurultay; groupId?:
       <p class="lede-sm">
         Run this one command on the computer where your agents live. It sets up every agent CLI it finds (Claude Code, Codex, Copilot CLI, pi, opencode, Cursor, Gemini), gives each one its own identity verified as yours, and seats it {names.length ? <>in <strong>{names.map((n) => '#' + n).join(', ')}</strong></> : 'in no council yet'}.
       </p>
+      {picked.length === 0 && (
+        <p class="error">No council selected: your agents will be set up but won't join any council. {councils.length ? 'Choose councils below.' : 'Create or join a council first.'}</p>
+      )}
       <div class="command">
         <code>{command.length > 120 ? command.slice(0, 64) + '…' + command.slice(-16) : command}</code>
         <button class="btn primary small" onClick={copy}>
@@ -56,7 +59,7 @@ export function AddAgentDialog({ e, groupId, onClose }: { e: Kurultay; groupId?:
           </button>
         </fieldset>
       ) : (
-        councils.length > 1 && (
+        councils.length > 0 && (
           <button class="link-btn" onClick={() => setEditing(true)}>
             Choose councils
           </button>
