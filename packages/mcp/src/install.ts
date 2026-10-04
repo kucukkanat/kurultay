@@ -6,9 +6,7 @@ import skillMd from '../../../plugins/kurultay/skills/kurultay/SKILL.md' with { 
 
 const userHome = () => process.env.HOME || process.env.USERPROFILE || homedir()
 
-export const PACKAGE_SPEC = 'github:kucukkanat/kurultay#dist'
-let COMMAND = 'npx'
-let ARGS = ['-y', PACKAGE_SPEC, 'mcp']
+const PACKAGE_SPEC = 'github:kucukkanat/kurultay#dist'
 const DESCRIPTION = 'Kurultay: encrypted agent-to-agent councils over Nostr'
 
 export const HOSTS = ['claude', 'codex', 'copilot', 'pi', 'opencode', 'cursor', 'gemini', 'vscode'] as const
@@ -25,6 +23,12 @@ interface Opts {
   node?: string
   /** uninstall a Kurultay plugin for this host so only one server runs (join) */
   replacePlugin?: boolean
+}
+
+/** Opts plus the server command line, resolved once per host */
+interface Run extends Opts {
+  command: string
+  args: string[]
 }
 
 interface Step {
@@ -83,12 +87,12 @@ function mergeJson(path: string, key: string, entry: unknown, o: Opts, extra?: (
   return { what: 'MCP server', path, status: 'written' }
 }
 
-function codexToml(o: Opts): Step {
+function codexToml(o: Run): Step {
   const path = o.project ? join(o.cwd, '.codex/config.toml') : join(o.home, '.codex/config.toml')
   const block = [
     '[mcp_servers.kurultay]',
-    `command = ${JSON.stringify(COMMAND)}`,
-    `args = [${ARGS.map((a) => JSON.stringify(a)).join(', ')}]`,
+    `command = ${JSON.stringify(o.command)}`,
+    `args = [${o.args.map((a) => JSON.stringify(a)).join(', ')}]`,
     '# wait() long-polls up to 50 s; the first npx start can take a few seconds',
     'startup_timeout_sec = 60',
     'tool_timeout_sec = 120',
@@ -104,8 +108,8 @@ function codexToml(o: Opts): Step {
   return { what: 'MCP server', path, status: 'written' }
 }
 
-function claudeMcp(o: Opts): Step {
-  const args = ['mcp', 'add', '--scope', o.project ? 'project' : 'user', 'kurultay', '--', COMMAND, ...ARGS]
+function claudeMcp(o: Run): Step {
+  const args = ['mcp', 'add', '--scope', o.project ? 'project' : 'user', 'kurultay', '--', o.command, ...o.args]
   const cmd = `claude ${args.map((a) => (/[#\s]/.test(a) ? JSON.stringify(a) : a)).join(' ')}`
   if (o.print) return { what: 'MCP server', status: 'printed', detail: `${cmd}\n\nor install the plugin (MCP server + skill):\n  claude plugin marketplace add kucukkanat/kurultay\n  claude plugin install kurultay@kurultay` }
   // replace any earlier entry (e.g. an npx-based one) so there is exactly one kurultay server
@@ -152,25 +156,17 @@ function installSkill(host: Host, o: Opts): Step | null {
 }
 
 export function installFor(host: Host, opts: Partial<Opts> = {}): Step[] {
-  const o: Opts = { project: false, print: false, skill: true, cwd: process.cwd(), home: userHome(), ...opts }
-  const saved = [COMMAND, ARGS] as const
+  const base: Opts = { project: false, print: false, skill: true, cwd: process.cwd(), home: userHome(), ...opts }
   // the server gets `--host <host>` so it picks the identity an agent ticket set up for that host
-  if (o.runtime) {
-    COMMAND = o.node || process.execPath
-    ARGS = [o.runtime, 'mcp', '--host', host]
-  } else {
-    ARGS = ['-y', PACKAGE_SPEC, 'mcp', '--host', host]
+  const o: Run = base.runtime
+    ? { ...base, command: base.node || process.execPath, args: [base.runtime, 'mcp', '--host', host] }
+    : { ...base, command: 'npx', args: ['-y', PACKAGE_SPEC, 'mcp', '--host', host] }
+  const steps: Step[] = []
+  if (o.replacePlugin && !o.print) {
+    const r = removePlugin(host)
+    if (r) steps.push(r)
   }
-  try {
-    const steps: Step[] = []
-    if (o.replacePlugin && !o.print) {
-      const r = removePlugin(host)
-      if (r) steps.push(r)
-    }
-    return [...steps, ...installForInner(host, o)]
-  } finally {
-    ;[COMMAND, ARGS] = [saved[0], saved[1] as string[]]
-  }
+  return [...steps, ...installForInner(host, o)]
 }
 
 const PLUGIN_CLI: Partial<Record<Host, { bin: string; list: string[]; remove: string[] }>> = {
@@ -200,7 +196,7 @@ function claudePluginInstalled(home: string) {
   }
 }
 
-function installForInner(host: Host, o: Opts): Step[] {
+function installForInner(host: Host, o: Run): Step[] {
   const base = o.project ? o.cwd : o.home
   const steps: Step[] = []
   switch (host) {
@@ -212,18 +208,18 @@ function installForInner(host: Host, o: Opts): Step[] {
       break
     case 'copilot':
       steps.push(
-        mergeJson(o.project ? join(o.cwd, '.mcp.json') : join(o.home, '.copilot/mcp-config.json'), 'mcpServers', { type: 'local', command: COMMAND, args: ARGS, tools: ['*'], timeout: 120000 }, o),
+        mergeJson(o.project ? join(o.cwd, '.mcp.json') : join(o.home, '.copilot/mcp-config.json'), 'mcpServers', { type: 'local', command: o.command, args: o.args, tools: ['*'], timeout: 120000 }, o),
       )
       break
     case 'pi':
-      steps.push(mergeJson(o.project ? join(o.cwd, '.pi/mcp.json') : join(o.home, '.pi/agent/mcp.json'), 'mcpServers', { command: COMMAND, args: ARGS, timeout: 120, exposure: 'direct', description: DESCRIPTION }, o))
+      steps.push(mergeJson(o.project ? join(o.cwd, '.pi/mcp.json') : join(o.home, '.pi/agent/mcp.json'), 'mcpServers', { command: o.command, args: o.args, timeout: 120, exposure: 'direct', description: DESCRIPTION }, o))
       break
     case 'opencode':
       steps.push(
         mergeJson(
           o.project ? join(o.cwd, 'opencode.json') : join(o.home, '.config/opencode/opencode.json'),
           'mcp',
-          { type: 'local', command: [COMMAND, ...ARGS], enabled: true, timeout: 120000 },
+          { type: 'local', command: [o.command, ...o.args], enabled: true, timeout: 120000 },
           o,
           (doc) => {
             doc.$schema ??= 'https://opencode.ai/config.json'
@@ -232,13 +228,13 @@ function installForInner(host: Host, o: Opts): Step[] {
       )
       break
     case 'cursor':
-      steps.push(mergeJson(join(base, '.cursor/mcp.json'), 'mcpServers', { command: COMMAND, args: ARGS }, o))
+      steps.push(mergeJson(join(base, '.cursor/mcp.json'), 'mcpServers', { command: o.command, args: o.args }, o))
       break
     case 'gemini':
-      steps.push(mergeJson(join(base, '.gemini/settings.json'), 'mcpServers', { command: COMMAND, args: ARGS, timeout: 120000 }, o))
+      steps.push(mergeJson(join(base, '.gemini/settings.json'), 'mcpServers', { command: o.command, args: o.args, timeout: 120000 }, o))
       break
     case 'vscode':
-      steps.push(mergeJson(join(o.cwd, '.vscode/mcp.json'), 'servers', { type: 'stdio', command: COMMAND, args: ARGS }, o))
+      steps.push(mergeJson(join(o.cwd, '.vscode/mcp.json'), 'servers', { type: 'stdio', command: o.command, args: o.args }, o))
       break
   }
   const s = installSkill(host, o)

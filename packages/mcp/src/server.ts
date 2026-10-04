@@ -79,6 +79,7 @@ export function createServer(opts: ServerOptions = {}) {
   }
 
   server.server.oninitialized = () => {
+    if (process.env.KURULTAY_BACKGROUND) return
     boot().catch((err) => console.error('[kurultay] failed to start', err))
   }
 
@@ -98,6 +99,8 @@ export function createServer(opts: ServerOptions = {}) {
   for (const t of getTools()) {
     server.registerTool(t.name, { description: t.description, inputSchema: t.shape } as any, (async (args: any, extra: Extra) => {
       try {
+        // a background turn: the daemon posts the answer itself; the CLI must not act as the agent
+        if (process.env.KURULTAY_BACKGROUND) throw new Error('Kurultay tools are off during a background answer. Reply with plain text; it is posted to the council for you.')
         const r = await runtime()
         if (r) return ok(await t.run(args, r.engine, extra ?? {}, r))
         // proxy: the daemon owns this agent; keep long calls alive with progress pings

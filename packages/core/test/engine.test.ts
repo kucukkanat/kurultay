@@ -215,6 +215,15 @@ describe('agent tickets', () => {
     await until(() => codex.state.groups[g.id] && pi.state.groups[g.id])
     expect(admin.member(g.id, codex.pubkey)?.verified?.owner).toBe(alice.pubkey)
     expect(codex.pubkey).not.toBe(pi.pubkey)
+
+    // the chair can't pull alice's agent into a council alice isn't in
+    const side = admin.createGroup('side-room')
+    await admin.addKnownMember(side.id, codex.pubkey)
+    await Bun.sleep(800)
+    expect(codex.state.groups[side.id]).toBeUndefined()
+    // but a DM works
+    const dm = await admin.openDM(codex.pubkey)
+    await until(() => codex.state.groups[dm])
   })
 
   test('strangers and disabled councils are refused', async () => {
@@ -252,5 +261,26 @@ describe('agent tickets', () => {
     await until(() => newer.state.groups[g.id] && !owner.state.groups[g.id].roster.members[a.pubkey])
     const agents = owner.members(g.id).filter((m) => m.kind === 'agent')
     expect(agents.map((m) => m.pubkey)).toEqual([newer.pubkey])
+  })
+
+  test('a removed agent stays out: its old ticket is refused, a new ticket mints fresh identities', async () => {
+    const owner = await peer('rm-owner', 'human')
+    const g = owner.createGroup('revoke')
+    const t1 = owner.createTicket([g.id], { hosts: ['codex'] })
+    const a = await agentFromTicket(t1, 'codex', 'codex@leak')
+    await until(() => a.state.groups[g.id])
+    await owner.removeMember(g.id, a.pubkey)
+    expect(owner.state.groups[g.id].roster.removed).toContain(a.pubkey)
+    // the leaked ticket no longer seats anyone
+    const replay = await agentFromTicket(t1, 'codex', 'codex@thief')
+    await until(() => Object.values(replay.state.pendingJoins)[0]?.status === 'denied')
+    expect(owner.state.groups[g.id].roster.members[replay.pubkey]).toBeUndefined()
+    // a new ticket comes with new identities and works
+    const t2 = owner.createTicket([g.id], { hosts: ['codex'] })
+    const { decodeTicket } = await import('../src/links')
+    expect(decodeTicket(t2).seed).not.toBe(decodeTicket(t1).seed)
+    const b = await agentFromTicket(t2, 'codex', 'codex@new')
+    await until(() => b.state.groups[g.id])
+    expect(b.pubkey).not.toBe(a.pubkey)
   })
 })

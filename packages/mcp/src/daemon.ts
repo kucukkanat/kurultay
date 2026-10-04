@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_RELAYS, getPublicKey, Kurultay } from '@kurultay/core'
@@ -29,8 +29,9 @@ export function readRegistry(): Record<string, RegistryEntry> {
 }
 
 export function writeRegistry(r: Record<string, RegistryEntry>) {
-  mkdirSync(configRoot(), { recursive: true })
-  writeFileSync(registryFile(), JSON.stringify(r, null, 2))
+  mkdirSync(configRoot(), { recursive: true, mode: 0o700 })
+  writeFileSync(registryFile(), JSON.stringify(r, null, 2), { mode: 0o600 })
+  chmodSync(registryFile(), 0o600)
 }
 
 const INTERACTIVE_GRACE = 10 * 60_000
@@ -47,6 +48,8 @@ class BackgroundAgent {
   private pending: Delivered[] = []
   private timer?: ReturnType<typeof setTimeout>
   private runs: number[] = []
+  /** the CLI answering right now: ended when the owner switches the agent off or the service stops */
+  child?: ChildProcess
 
   constructor(
     public instance: string,
@@ -57,6 +60,7 @@ class BackgroundAgent {
     this.rt.onDelivered((d) => this.onDelivered(d))
     engine.on('settings', () => {
       log(instance, 'permission set to', engine.agentMode)
+      if (engine.agentMode === 'off') this.cancel('switched off by the owner')
       void this.report()
     })
   }
@@ -72,6 +76,12 @@ class BackgroundAgent {
   /** an open CLI session is using this agent right now: let it answer instead */
   get interactive() {
     return this.rt.waiting > 0 || Date.now() - this.rt.lastInteractive < INTERACTIVE_GRACE
+  }
+
+  cancel(reason: string) {
+    if (!this.child) return
+    log(this.instance, 'ending the running turn:', reason)
+    endChild(this.child)
   }
 
   report() {
@@ -94,6 +104,9 @@ class BackgroundAgent {
     this.runs = this.runs.filter((x) => x > t - 3600_000)
     if (this.runs.length >= RUNS_PER_HOUR) {
       this.lastError = 'hourly limit reached'
+      // pick the queue up again once the oldest run leaves the window
+      clearTimeout(this.timer)
+      this.timer = setTimeout(() => void this.drain(), this.runs[0] + 3600_000 - t + 1000)
       return
     }
     const batch = this.pending.splice(0)
@@ -132,9 +145,10 @@ class BackgroundAgent {
     log(this.instance, `answering ${incoming.length} message(s) with ${cmd.cmd} (${mode}) in ${this.entry.workdir}`)
     let answer: string
     try {
-      const out = await runCommand(cmd.cmd, cmd.args, this.entry.workdir, cmd.env)
+      const out = await runCommand(cmd.cmd, cmd.args, this.entry.workdir, cmd.env, (c) => (this.child = c))
       answer = cleanAnswer(cmd.outputFile && existsSync(cmd.outputFile) ? readFileSync(cmd.outputFile, 'utf8') : out)
     } finally {
+      this.child = undefined
       clearInterval(typing)
       groups.forEach((g) => void e.typing(g, false).catch(() => {}))
       if (existsSync(outFile)) rmSync(outFile, { force: true })
@@ -153,14 +167,25 @@ class BackgroundAgent {
   }
 }
 
-function runCommand(cmd: string, args: string[], cwd: string, env?: Record<string, string>): Promise<string> {
+/** SIGTERM, then SIGKILL if the CLI ignores it */
+function endChild(child: ChildProcess) {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  child.kill('SIGTERM')
+  setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  }, 5000).unref()
+}
+
+function runCommand(cmd: string, args: string[], cwd: string, env: Record<string, string> | undefined, started: (c: ChildProcess) => void): Promise<string> {
   return new Promise((resolve, reject) => {
+    // KURULTAY_BACKGROUND tells a Kurultay MCP server inside the CLI not to act for the agent (see server.ts)
     const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env, KURULTAY_BACKGROUND: '1' }, stdio: ['ignore', 'pipe', 'pipe'] })
+    started(child)
     let out = ''
     let err = ''
     child.stdout.on('data', (c) => (out += c))
     child.stderr.on('data', (c) => (err += c))
-    const timer = setTimeout(() => child.kill('SIGTERM'), RUN_TIMEOUT)
+    const timer = setTimeout(() => endChild(child), RUN_TIMEOUT)
     child.on('error', (e) => {
       clearTimeout(timer)
       reject(new Error(`${cmd} not found or failed to start (${(e as Error).message})`))
@@ -259,19 +284,11 @@ export async function runDaemon() {
 
   const shutdown = async () => {
     srv.close()
+    agents.forEach((a) => a.cancel('service stopping'))
     await Promise.all([...agents.values()].map((a) => a.engine.stop().catch(() => {})))
     process.exit(0)
   }
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)
   log(`kurultay daemon ${VERSION} running with ${agents.size} agent(s)`)
-}
-
-/** Instances with a ticket identity on disk (for `kurultay status`). */
-export function knownInstances() {
-  try {
-    return readdirSync(join(configRoot(), 'instances'))
-  } catch {
-    return []
-  }
 }

@@ -630,7 +630,7 @@ function Welcome({ openNav, onNew, onJoin, onAgents }: { openNav: () => void; on
           <button class="welcome-card" onClick={onAgents}>
             <Icon name="bot" size={22} />
             <strong>Add your agents</strong>
-            <span>One command seats Claude Code, Codex, Copilot CLI, pi or opencode.</span>
+            <span>One command seats Claude Code, Codex, Copilot CLI, pi, opencode, Cursor or Gemini CLI.</span>
           </button>
         </div>
       </div>
@@ -647,7 +647,7 @@ function AgentsView({ e, openNav, addAgents }: { e: Kurultay; openNav: () => voi
       <div class="page-body">
         <section class="block">
           <h2>Add your agents</h2>
-          <p class="muted">Pick your agent CLIs and run one command from the folder they should work in. They join your councils, verified as yours, and answer in the background whenever they're tagged. No pairing, no approvals.</p>
+          <p class="muted">Pick your agent CLIs and run one command from the folder they should work in. They join your councils, verified as yours, and answer in the background whenever they're tagged, within the permission you set below. No pairing codes, nothing else to run.</p>
           <button class="btn primary" onClick={addAgents}>
             <Icon name="bot" size={16} /> Get the command
           </button>

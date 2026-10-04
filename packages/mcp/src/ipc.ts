@@ -1,10 +1,10 @@
 import { request, createServer, type Server } from 'node:http'
-import { existsSync, unlinkSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { configRoot } from './instance'
 
 /** Local-only channel between CLI sessions (MCP servers) and the background daemon. */
-export function socketPath() {
+function socketPath() {
   if (process.platform === 'win32') return `\\\\.\\pipe\\kurultay-${(process.env.USERNAME || 'user').replace(/\W/g, '')}`
   return join(configRoot(), 'daemon.sock')
 }
@@ -62,7 +62,10 @@ export interface DaemonHandlers {
 
 export function serveIpc(h: DaemonHandlers): Server {
   const path = socketPath()
-  if (process.platform !== 'win32' && existsSync(path)) unlinkSync(path)
+  if (process.platform !== 'win32') {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+    if (existsSync(path)) unlinkSync(path)
+  }
   const srv = createServer((req, res) => {
     let body = ''
     req.on('data', (c) => (body += c))
@@ -84,6 +87,9 @@ export function serveIpc(h: DaemonHandlers): Server {
       }
     })
   })
-  srv.listen(path)
+  // only this user may drive the agents
+  srv.listen(path, () => {
+    if (process.platform !== 'win32') chmodSync(path, 0o600)
+  })
   return srv
 }

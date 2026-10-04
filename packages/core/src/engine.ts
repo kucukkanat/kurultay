@@ -564,6 +564,10 @@ export class Kurultay extends Emitter<EngineEvents> {
       void this.sendInbox(from, env.inbox, { type: 'deny', reqId: env.reqId, reason: 'the agent’s owner is not a member of this council' })
       return
     }
+    if (g.roster.removed?.includes(from)) {
+      void this.sendInbox(from, env.inbox, { type: 'deny', reqId: env.reqId, reason: 'this agent was removed from the council; mint a new ticket in the app to seat it again' })
+      return
+    }
     if (g.roster.allowMemberAgents === false) {
       void this.sendInbox(from, env.inbox, { type: 'deny', reqId: env.reqId, reason: 'this council does not accept members’ agents' })
       return
@@ -588,6 +592,9 @@ export class Kurultay extends Emitter<EngineEvents> {
     const existing = this.state.groups[groupId]
     // unsolicited adds (DMs, direct adds) are only accepted from peers we already share a group with
     if (!existing && !pendingEntry && !Object.values(this.state.groups).some((x) => x.roster.members[from])) return
+    // an owned agent sits only where its owner is (or in a DM): nobody else can pull it into a council
+    const owner = this.state.owner?.pubkey
+    if (!existing && !pendingEntry && this.kind === 'agent' && owner && !roster.dm && !roster.members[owner]) return
     if (existing) {
       if (!existing.roster.admins.includes(from)) return
       if (env.epoch < existing.epoch) return
@@ -870,6 +877,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     if (!g || !this.isAdmin(groupId)) throw new KurultayError('Only admins can add members')
     const m = Object.values(this.state.groups).map((x) => x.roster.members[pubkey]).find(Boolean)
     if (!m) throw new KurultayError('Unknown peer: no shared group')
+    if (g.roster.removed?.includes(pubkey)) g.roster.removed = g.roster.removed.filter((x) => x !== pubkey)
     this.admit(groupId, { pubkey, name: m.name, kind: m.kind, inbox: m.inbox, owner: m.owner, attestation: m.attestation }, randomHex(8))
   }
 
@@ -906,6 +914,8 @@ export class Kurultay extends Emitter<EngineEvents> {
     delete g.roster.members[pubkey]
     g.roster.admins = g.roster.admins.filter((a) => a !== pubkey)
     g.roster.muted = g.roster.muted.filter((a) => a !== pubkey)
+    // an agent removed on purpose stays out: its ticket would otherwise seat it again
+    if (why === 'removed' && m.kind === 'agent') g.roster.removed = [...(g.roster.removed ?? []).filter((x) => x !== pubkey), pubkey].slice(-200)
     g.roster.version++
     // rotate: new epoch key, old key kept briefly for in-flight messages
     g.prevKey = { epoch: g.epoch, key: g.key, until: now() + 120 }
@@ -992,7 +1002,10 @@ export class Kurultay extends Emitter<EngineEvents> {
   createTicket(groupIds: string[], opts: { hosts?: string[] } = {}): string {
     if (this.kind !== 'human') throw new KurultayError('Only people can create agent tickets')
     // one seed per person: every ticket yields the same agent identities, so running it again never adds duplicates
-    const seed = (this.state.agentSeed ??= randomHex(32))
+    let seed = (this.state.agentSeed ??= randomHex(32))
+    // an admin removed one of these identities somewhere: start over with fresh ones (the old ticket stays dead there)
+    const removed = new Set(Object.values(this.state.groups).flatMap((g) => g.roster.removed ?? []))
+    if (AGENT_HOSTS.some((host) => removed.has(deriveAgent(seed, host).pk))) seed = this.state.agentSeed = randomHex(32)
     const ticketId = randomHex(6)
     const agents = AGENT_HOSTS.map((host) => ({ host, ...deriveAgent(seed, host) }))
     const att = attestMany(this.sk, agents.map((a) => ({ pk: a.pk, label: a.host })), this.name)

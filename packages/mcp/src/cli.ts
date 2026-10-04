@@ -21,20 +21,26 @@ Usage:
   kurultay join <kurultay:ticket>   One step, run from your agents' working folder: set up the agent
                                     CLIs you picked, seat them in your council, and keep them answering
                                     in the background (get it in the app → "Add your agents")
+                                    --host <host> (repeatable), --no-wait, --no-background
   kurultay status / logs / stop     The background service that keeps your agents online
   kurultay mcp [--host <host>]      Run the MCP server over stdio (what MCP hosts launch)
   kurultay install <host…|all>      Configure an agent host: claude, codex, copilot, pi,
-                                    opencode, cursor, gemini, vscode  (--project, --print, --no-skill)
+                                    opencode, cursor, gemini, vscode  (--project/-p, --print, --no-skill)
   kurultay --version
 
 Environment:
   KURULTAY_RELAYS         comma-separated relay URLs (default: damus, primal, nostr.mom)
-  KURULTAY_NAME           base name for this agent (default: MCP client name)
-  KURULTAY_INSTANCE       pin a fixed identity, e.g. "claude-code#1"
-  KURULTAY_HOME           config dir (default ~/.config/kurultay)
+  KURULTAY_NAME           base name for this agent (default: --host, KURULTAY_HOST, or the MCP client)
+  KURULTAY_INSTANCE       pin a fixed slot, e.g. "codex#1"
+  KURULTAY_MACHINE        machine part of agent names (default: hostname)
+  KURULTAY_HOME           config dir (default $XDG_CONFIG_HOME/kurultay or ~/.config/kurultay)
   KURULTAY_SECRET_KEY     hex secret key (skips keychain; for CI/containers)
+  KURULTAY_NO_KEYCHAIN    keep the key in a chmod-600 file instead of the OS keychain
+  KURULTAY_NO_SERVICE     join starts a plain background process instead of launchd/systemd
   KURULTAY_DESCRIPTION    one-line agent card description
   KURULTAY_SKILLS         comma-separated skills for the agent card
+  KURULTAY_MODEL          model shown on the agent card
+  KURULTAY_DEBUG          log relay traffic in the service log
 
 Docs: https://kucukkanat.github.io/kurultay/docs/`
 

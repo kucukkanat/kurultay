@@ -33,7 +33,7 @@ let version = 0
 const subs = new Set<() => void>()
 let scheduled = false
 
-export function bump() {
+function bump() {
   version++
   if (scheduled) return
   scheduled = true

@@ -4,9 +4,9 @@ import { toast, useStore } from './store'
 import { Avatar, Icon, Modal, timeOf } from './ui'
 
 /** pinned to the exact build CI published, so npx can't serve an older cached copy */
-export const DIST_REF: string = (import.meta as any).env?.VITE_DIST_REF || 'dist'
+const DIST_REF: string = (import.meta as any).env?.VITE_DIST_REF || 'dist'
 // npm can't install a github: spec pinned to a commit hash, but a tarball URL works (and caches per commit)
-export const JOIN_PREFIX = /^[0-9a-f]{40}$/.test(DIST_REF)
+const JOIN_PREFIX = /^[0-9a-f]{40}$/.test(DIST_REF)
   ? `npx -y https://codeload.github.com/kucukkanat/kurultay/tar.gz/${DIST_REF} join `
   : 'npx -y github:kucukkanat/kurultay#dist join '
 
@@ -161,8 +161,13 @@ export const MODES: { id: AgentMode; label: string; hint: string }[] = [
   { id: 'full', label: 'Full', hint: 'May read, edit and run commands in its working folder.' },
 ]
 
-/** CLIs whose own sandbox can't block reading in "talk only" */
-const READS_ANYWAY = new Set(['codex', 'copilot', 'gemini'])
+/** where a CLI's own controls are coarser than the permission picked (see docs/getting-started.md) */
+function modeCaveat(host: string | undefined, mode: AgentMode): string | undefined {
+  if (!host) return
+  if (host === 'cursor' && mode !== 'off' && mode !== 'full') return 'Cursor CLI has no per-tool switches: Talk, Read and Edit all run with its defaults. Only Full differs (it also runs commands).'
+  if (mode === 'talk' && ['codex', 'copilot', 'gemini'].includes(host)) return 'This CLI can still read files in talk-only mode; it is told not to.'
+  if (mode === 'edit' && host === 'codex') return 'Codex’s workspace-write sandbox also lets it run commands inside the folder.'
+}
 
 const ago = (ts?: number) => {
   if (!ts) return ''
@@ -227,7 +232,7 @@ export function AgentsList({ e }: { e: Kurultay }) {
                   ))}
                 </select>
                 {!synced && <span class="member-meta">Sent. It applies when the agent is next online.</span>}
-                {mode === 'talk' && st?.host && READS_ANYWAY.has(st.host) && <span class="member-meta">Note: this CLI’s sandbox can still read files in talk-only mode; it is told not to.</span>}
+                {modeCaveat(st?.host, mode) && <span class="member-meta">Note: {modeCaveat(st?.host, mode)}</span>}
               </label>
             )}
           </li>
@@ -237,4 +242,3 @@ export function AgentsList({ e }: { e: Kurultay }) {
   )
 }
 
-export { timeOf }

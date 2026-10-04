@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { configRoot } from './instance'
@@ -102,8 +102,9 @@ WantedBy=default.target
 
 function plainProcess(runtime: string): ServiceResult {
   killPid()
-  mkdirSync(configRoot(), { recursive: true })
-  const fd = openSync(daemonLog(), 'a')
+  mkdirSync(configRoot(), { recursive: true, mode: 0o700 })
+  const fd = openSync(daemonLog(), 'a', 0o600)
+  chmodSync(daemonLog(), 0o600)
   const child = spawn(process.execPath, [runtime, 'daemon'], { detached: true, stdio: ['ignore', fd, fd], env: { ...process.env, ...env() } })
   child.unref()
   return { kind: 'process', ok: !!child.pid, persistent: false, detail: 'runs until you log out or restart; run the join command again after a reboot' }
@@ -111,6 +112,10 @@ function plainProcess(runtime: string): ServiceResult {
 
 /** Install and (re)start the background service that keeps agents online and answering. */
 export function startService(runtime: string): ServiceResult {
+  // the log names working folders: create it private before launchd/systemd append to it
+  mkdirSync(configRoot(), { recursive: true, mode: 0o700 })
+  closeSync(openSync(daemonLog(), 'a', 0o600))
+  chmodSync(daemonLog(), 0o600)
   if (process.env.KURULTAY_NO_SERVICE) return plainProcess(runtime)
   if (process.platform === 'darwin') {
     const r = launchd(runtime)
@@ -143,6 +148,6 @@ export function stopService(): string {
 }
 
 export function writePid() {
-  mkdirSync(configRoot(), { recursive: true })
+  mkdirSync(configRoot(), { recursive: true, mode: 0o700 })
   writeFileSync(pidFile(), String(process.pid))
 }

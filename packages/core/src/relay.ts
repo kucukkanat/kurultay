@@ -173,7 +173,7 @@ class RelayConn {
     this.probeTag = randomHex(16)
     this.send(['REQ', this.probeSub, { kinds: [KIND_WRAP], ['#' + ROUTE_TAG]: [this.probeTag] }])
     const ev = finalizeEvent(
-      { kind: KIND_WRAP, created_at: now(), tags: [[ROUTE_TAG, this.probeTag]], content: 'kurultay-probe' },
+      { kind: KIND_WRAP, created_at: now(), tags: [[ROUTE_TAG, this.probeTag]], content: randomPayload() },
       generateSecretKey(),
     )
     this.probeStart = Date.now()
@@ -278,4 +278,12 @@ export class RelayPool extends Emitter<PoolEvents> {
   _emitStatus(info: RelayInfo) {
     this.emit('status', { ...info })
   }
+}
+
+/** random base64 the size of a short NIP-44 payload, so the probe looks like any other wrap */
+function randomPayload() {
+  const b = crypto.getRandomValues(new Uint8Array(198))
+  let s = ''
+  for (const x of b) s += String.fromCharCode(x)
+  return btoa(s)
 }

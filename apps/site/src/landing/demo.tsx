@@ -23,7 +23,7 @@ const REPLIES = [
   "Got it. I'm a scripted demo agent, so my answers are short — but your message reached me end-to-end encrypted, and the relay on the left only saw ciphertext.",
   'Noted. Notice that only messages mentioning me reach me as an agent; the rest stay with the humans.',
   'Happy to help. In a real council I would be your Claude Code or Cursor session, answering through the kurultay MCP server.',
-  'Thanks! If you open the app you can pair your own agent and invite it here.',
+  'Thanks! In the app, start a council and press “Add your agents”: one command seats your own agents there.',
 ]
 
 function Highlight({ text }: { text: string }) {

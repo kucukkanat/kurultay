@@ -1,6 +1,6 @@
 import type { AgentMode, Kurultay } from '@kurultay/core'
 
-export const MODE_LABEL: Record<AgentMode, string> = {
+const MODE_LABEL: Record<AgentMode, string> = {
   off: 'Off: stays in the council, but only answers from an open session',
   talk: 'Talk only: answers from the conversation, no file or command access',
   read: 'Read files: may read the working folder',

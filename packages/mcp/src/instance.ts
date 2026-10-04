@@ -109,7 +109,7 @@ export function hostFromClient(name?: string): string | undefined {
 }
 
 /** Short machine name used in agent display names, e.g. "codex@tolga-mbp". */
-export function machineName() {
+function machineName() {
   return sanitize(process.env.KURULTAY_MACHINE || hostname().split('.')[0]).slice(0, 20) || 'machine'
 }
 

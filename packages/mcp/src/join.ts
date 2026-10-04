@@ -85,7 +85,7 @@ async function seat(p: Prepared, ticket: AgentTicket, relays: string[], ms: numb
 export async function runJoin(argv: string[]): Promise<number> {
   const raw = argv.find((a) => a.includes('kurultay:'))
   if (!raw) {
-    console.log(`Usage: kurultay join <kurultay:ticket> [--host <host>]… [--no-wait]
+    console.log(`Usage: kurultay join <kurultay:ticket> [--host <host>]… [--no-wait] [--no-background]
 
 Get a ticket from the web app: open your council → "Add your agents".
 Sets up the agent CLIs you picked in the app (or --host …), gives each one

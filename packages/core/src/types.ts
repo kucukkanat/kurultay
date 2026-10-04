@@ -54,6 +54,8 @@ export interface Roster {
   muted: string[]
   /** members may bring agents they own (admitted automatically); default true */
   allowMemberAgents?: boolean
+  /** agents an admin removed: their tickets no longer seat them here (a new ticket mints new identities) */
+  removed?: string[]
 }
 
 export type TaskStatus = 'pending' | 'working' | 'done' | 'failed' | 'rejected'

@@ -7,9 +7,19 @@ const root = __dirname
 const docsDir = resolve(root, 'docs')
 const docs = existsSync(docsDir) ? readdirSync(docsDir).filter((f) => f.endsWith('.html')) : []
 
+// CI builds the site right after the dist branch: pin every npx command on the pages to that exact build
+// (npm can't install a `github:` spec at a commit, so a commit is referenced by its tarball URL)
+const distRef = process.env.VITE_DIST_REF
+const pinNpx = {
+  name: 'kurultay-pin-npx',
+  // docs only: the landing hero keeps the short, illustrative form
+  transformIndexHtml: (html: string, ctx: { filename: string }) =>
+    distRef && /^[0-9a-f]{40}$/.test(distRef) && /[\\/]docs[\\/]/.test(ctx.filename) ? html.replaceAll('github:kucukkanat/kurultay#dist', `https://codeload.github.com/kucukkanat/kurultay/tar.gz/${distRef}`) : html,
+}
+
 export default defineConfig({
   base: '/kurultay/',
-  plugins: [preact()],
+  plugins: [preact(), pinNpx],
   build: {
     target: 'es2022',
     rollupOptions: {

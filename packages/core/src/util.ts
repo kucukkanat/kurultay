@@ -8,7 +8,7 @@ export const randomHex = (n = 32) => bytesToHex(randomBytes(n))
 const enc = new TextEncoder()
 const dec = new TextDecoder()
 export const utf8 = (s: string) => enc.encode(s)
-export const fromUtf8 = (b: Uint8Array) => dec.decode(b)
+const fromUtf8 = (b: Uint8Array) => dec.decode(b)
 
 export function b64urlEncode(s: string): string {
   const bytes = utf8(s)
@@ -51,7 +51,6 @@ export class Emitter<Events extends Record<string, unknown>> {
   }
 }
 
-export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export function shortKey(pk: string) {
   return pk.slice(0, 8) + '…' + pk.slice(-4)
