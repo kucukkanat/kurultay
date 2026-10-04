@@ -283,4 +283,26 @@ describe('agent tickets', () => {
     await until(() => b.state.groups[g.id])
     expect(b.pubkey).not.toBe(a.pubkey)
   })
+
+  test('owner renames an agent: it goes by the new name in every council, also where someone else is admin', async () => {
+    const owner = await peer('namer', 'human')
+    const chair = await peer('chair2', 'human')
+    const mine = owner.createGroup('mine')
+    const theirs = chair.createGroup('theirs')
+    await owner.redeem(chair.createInvite(theirs.id))
+    await until(() => owner.state.groups[theirs.id])
+    const t = owner.createTicket([mine.id, theirs.id], { hosts: ['codex'] })
+    const a = await agentFromTicket(t, 'codex', 'codex@box')
+    await until(() => a.state.groups[mine.id] && a.state.groups[theirs.id])
+    await expect(owner.renameAgent(a.pubkey, 'bad name!')).rejects.toThrow()
+    await owner.renameAgent(a.pubkey, 'reviewer')
+    await until(() => owner.member(mine.id, a.pubkey)?.name === 'reviewer' && chair.member(theirs.id, a.pubkey)?.name === 'reviewer')
+    expect(a.name).toBe('reviewer')
+    expect(a.state.agentSettings?.name).toBe('reviewer')
+    // @reviewer reaches it
+    const got: string[] = []
+    a.on('message', (m) => m.forMe && got.push(m.message.text))
+    await chair.send(theirs.id, '@reviewer please look')
+    await until(() => got.length === 1)
+  })
 })

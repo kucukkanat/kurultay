@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks'
-import { decodeTicket, shortKey, type AgentMode, type Kurultay } from '@kurultay/core'
+import { cleanName, decodeTicket, shortKey, type AgentMode, type Kurultay } from '@kurultay/core'
 import { toast, useStore } from './store'
 import { Avatar, Icon, Modal, timeOf } from './ui'
 
@@ -175,6 +175,57 @@ const ago = (ts?: number) => {
   return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} d ago`
 }
 
+/** The agent's name, editable by its owner. The agent takes it in every council it sits in. */
+function AgentName({ e, pubkey, current }: { e: Kurultay; pubkey: string; current: string }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const wanted = e.state.agentNames?.[pubkey]
+  const pending = !!wanted && wanted !== current
+  const clean = draft === null ? null : cleanName(draft)
+  const save = () => {
+    if (!clean) return
+    if (clean === current && !pending) return setDraft(null)
+    e.renameAgent(pubkey, clean)
+      .then(() => (setDraft(null), toast(`Renaming to ${clean}`)))
+      .catch((x) => toast(x.message, 'error'))
+  }
+  if (draft !== null)
+    return (
+      <form
+        class="agent-rename"
+        onSubmit={(ev) => {
+          ev.preventDefault()
+          save()
+        }}
+      >
+        <input
+          class="input"
+          value={draft}
+          aria-label="Agent name"
+          maxLength={48}
+          autoFocus
+          onInput={(ev) => setDraft((ev.target as HTMLInputElement).value)}
+          onKeyDown={(ev) => ev.key === 'Escape' && setDraft(null)}
+        />
+        <button class="btn small primary" type="submit" disabled={!clean}>
+          Save
+        </button>
+        <button class="btn small" type="button" onClick={() => setDraft(null)}>
+          Cancel
+        </button>
+        <span class="member-meta">{clean ? `Others will see and @mention it as ${clean}` : 'Letters, digits and _ # . - only'}</span>
+      </form>
+    )
+  return (
+    <div class="member-name agent-name">
+      {current}
+      <button class="icon-btn" type="button" title="Rename" aria-label={`Rename ${current}`} onClick={() => setDraft(wanted ?? current)}>
+        <Icon name="pencil" size={14} />
+      </button>
+      {pending && <span class="member-meta"> → {wanted} (applies when it’s next online)</span>}
+    </div>
+  )
+}
+
 export function AgentsList({ e }: { e: Kurultay }) {
   const list = myAgents(e)
   if (!list.length) return <p class="muted">None yet. Add your agents and they'll show up here once they take a seat.</p>
@@ -190,8 +241,8 @@ export function AgentsList({ e }: { e: Kurultay }) {
           <li key={a.pubkey} class="agent-card">
             <div class="agent-head">
               <Avatar name={a.name} kind="agent" online={a.online} />
-              <div>
-                <div class="member-name">{a.name}</div>
+              <div class="agent-head-text">
+                {mine ? <AgentName e={e} pubkey={a.pubkey} current={a.name} /> : <div class="member-name">{a.name}</div>}
                 <div class="member-meta">
                   {a.online ? 'online' : 'offline'} · {a.councils.length ? a.councils.map((c) => '#' + c).join(', ') : 'no councils'} · {shortKey(a.pubkey)}
                 </div>

@@ -120,9 +120,10 @@ Receivers MUST ignore any group envelope whose inner `pubkey` is not in their cu
 | `deny` | `reqId`, `reason` | |
 | `sync_req` | `groupId`, `epoch` | member coming online asks the admins for the current key (`epoch` is informational) |
 | `removed` | `groupId` | |
+| `rename` | `groupId`, `name` | member → admins: change the name I go by; admins apply it (kept unique) and broadcast `state` |
 | `agent_join` | `groupId`, `reqId`, `name`, `inbox`, `attestation`, `card?` | an owner-certified agent asks to be seated (see *Agent tickets*) |
-| `agent_settings` | `mode: off\|talk\|read\|edit\|full` | owner → agent: what the agent may do when it answers on its own |
-| `agent_status` | `status{host?, workdir?, background, headless, mode, running?, lastRun?, lastError?}` | agent → owner, private: where and how the agent runs |
+| `agent_settings` | `mode: off\|talk\|read\|edit\|full`, `name?` | owner → agent: what the agent may do when it answers on its own, and the name it should go by |
+| `agent_status` | `status{host?, workdir?, background, headless, mode, name?, running?, lastRun?, lastError?}` | agent → owner, private: where and how the agent runs |
 | `pair_req` | `pairId`, `secret`, `label`, `inbox`, `client?` | agent → owner, see *Owners* |
 | `pair_ok` | `pairId`, `attestation` | owner → agent |
 | `approve_req` | `reqId`, `groupName`, `admin`, `card?` | agent → owner: may I join this group? |
@@ -176,7 +177,9 @@ A paired agent MUST ask its owner (`approve_req`) before redeeming an invite, an
 
 ### Agent settings
 
-The owner tells an agent what it may do when it answers on its own with `agent_settings{mode}`: `off` (no unattended answers), `talk` (default: no file or command access), `read`, `edit`, `full`. Agents MUST accept it only from their owner. Agents report back with `agent_status` to the owner only (never to a group), so the owner sees where the agent runs and whether the mode arrived; the owner resends `agent_settings` if a reported mode differs.
+The owner tells an agent what it may do when it answers on its own with `agent_settings{mode}`: `off` (no unattended answers), `talk` (default: no file or command access), `read`, `edit`, `full`. Agents MUST accept it only from their owner. Agents report back with `agent_status` to the owner only (never to a group), so the owner sees where the agent runs and whether the mode arrived; the owner resends `agent_settings` if a reported mode or name differs.
+
+When `agent_settings` carries a `name`, the agent adopts it and sends `rename` to the admins of every group whose roster still shows another name (renaming itself directly where it is admin). It asks again whenever it receives a roster that still shows the old name. Names double as mention handles: `[\w#.-]+` with an optional `@[\w.-]+`, at most 48 characters.
 
 ## Agent tickets
 

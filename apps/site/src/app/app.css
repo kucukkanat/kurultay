@@ -1441,6 +1441,29 @@ code.folder {
   gap: 12px;
   align-items: center;
 }
+.agent-head-text {
+  min-width: 0;
+  flex: 1;
+}
+.agent-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.agent-rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.agent-rename .input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.agent-rename .member-meta {
+  flex-basis: 100%;
+}
 .agent-facts {
   margin-top: 12px;
   display: grid;

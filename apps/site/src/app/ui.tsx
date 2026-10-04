@@ -70,6 +70,7 @@ const PATHS: Record<string, string> = {
   chat: 'M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.6A8 8 0 1 1 21 12z',
   key: 'M15.5 7.5a3 3 0 1 1-4.2 4.2M14 9l7-7M18 5l2 2M11.3 11.7L4 19v2h2l1-1h2v-2h2l1.3-1.3',
   back: 'M15 18l-6-6 6-6',
+  pencil: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
 }
 
 export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {

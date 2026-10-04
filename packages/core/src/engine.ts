@@ -21,6 +21,7 @@ import {
   KIND_WRAP,
   AGENT_HOSTS,
   DEFAULT_AGENT_MODE,
+  cleanName,
   type AgentMode,
   type AgentStatus,
   type AgentTicket,
@@ -197,6 +198,11 @@ export class Kurultay extends Emitter<EngineEvents> {
     const loaded = await this.storage.load()
     if (loaded && loaded.v === 1) this.state = { ...emptyState(), ...loaded }
     this.state.pk = this.pubkey
+    // an agent keeps the name its owner gave it
+    if (this.state.agentSettings?.name) {
+      this.name = this.state.agentSettings.name
+      this.card = { ...this.card, name: this.name }
+    }
     this.persist()
     this.pool.setRelays(this.allRelays())
     this.resubscribe()
@@ -394,6 +400,7 @@ export class Kurultay extends Emitter<EngineEvents> {
         if (!env.roster.members[this.pubkey]) return this.dropGroup(groupId, 'You were removed from the group')
         g.roster = env.roster
         this.changed('roster')
+        this.keepName(g)
         break
       case 'leave':
         if (this.isAdmin(groupId) && from !== this.pubkey) void this.removeMember(groupId, from, 'left')
@@ -423,9 +430,18 @@ export class Kurultay extends Emitter<EngineEvents> {
         return this.onAgentJoin(from, env)
       case 'agent_settings': {
         if (!this.state.owner || from !== this.state.owner.pubkey) return
-        this.state.agentSettings = { mode: env.mode, updatedAt: now() }
+        const name = env.name ? cleanName(env.name) ?? undefined : this.state.agentSettings?.name
+        this.state.agentSettings = { mode: env.mode, name, updatedAt: now() }
         this.emit('settings', { mode: env.mode })
         this.changed('settings')
+        if (name && name !== this.name) this.useName(name)
+        return
+      }
+      case 'rename': {
+        // a member asks the admins to change the name it goes by
+        const g = this.state.groups[env.groupId]
+        if (!g || !this.isAdmin(g.id) || !g.roster.members[from]) return
+        void this.renameMember(g.id, from, env.name).catch(() => {})
         return
       }
       case 'agent_status': {
@@ -434,7 +450,8 @@ export class Kurultay extends Emitter<EngineEvents> {
         st[from] = { ...env.status, at: now() }
         // the agent came online with an older setting than the one I chose: send mine again
         const want = this.state.agentModes?.[from]
-        if (want && want !== env.status.mode) void this.setAgentMode(from, want)
+        const wantName = this.state.agentNames?.[from]
+        if ((want && want !== env.status.mode) || (wantName && env.status.name && wantName !== env.status.name)) void this.sendAgentSettings(from)
         this.changed('agent-status')
         return
       }
@@ -623,6 +640,21 @@ export class Kurultay extends Emitter<EngineEvents> {
     this.resubscribe()
     this.changed('key')
     if (!existing) this.beacon()
+    this.keepName(this.state.groups[groupId])
+  }
+
+  private renameAsked: Record<string, number> = {}
+  /** Agent: the roster still shows an old name (e.g. no admin was online when I was renamed): ask again. */
+  private keepName(g: GroupState) {
+    const want = this.state.agentSettings?.name
+    if (!want || g.roster.members[this.pubkey]?.name === want) return
+    if (Date.now() - (this.renameAsked[g.id] ?? 0) < 60_000) return
+    this.renameAsked[g.id] = Date.now()
+    if (this.isAdmin(g.id)) return void this.renameMember(g.id, this.pubkey, want).catch(() => {})
+    for (const a of g.roster.admins) {
+      const m = g.roster.members[a]
+      if (m && a !== this.pubkey) void this.sendInbox(a, m.inbox, { type: 'rename', groupId: g.id, name: want }).catch(() => {})
+    }
   }
 
   private dropGroup(groupId: string, why: string) {
@@ -864,8 +896,8 @@ export class Kurultay extends Emitter<EngineEvents> {
     this.system(groupId, `${g.roster.members[req.pubkey].name} joined`)
   }
 
-  private uniqueName(g: GroupState, name: string) {
-    const taken = new Set(Object.values(g.roster.members).map((m) => m.name.toLowerCase()))
+  private uniqueName(g: GroupState, name: string, self?: string) {
+    const taken = new Set(Object.values(g.roster.members).filter((m) => m.pubkey !== self).map((m) => m.name.toLowerCase()))
     const base = name.replace(/\s+/g, '-') || 'peer'
     if (!taken.has(base.toLowerCase())) return base
     for (let i = 2; ; i++) if (!taken.has(`${base}-${i}`.toLowerCase())) return `${base}-${i}`
@@ -959,6 +991,33 @@ export class Kurultay extends Emitter<EngineEvents> {
     delete this.state.groups[groupId]
     this.resubscribe()
     this.changed('left')
+  }
+
+  /** Admin: change the name a member goes by (kept unique within the group). */
+  async renameMember(groupId: string, pubkey: string, name: string) {
+    const g = this.state.groups[groupId]
+    if (!g || !this.isAdmin(groupId)) throw new KurultayError('Only admins can rename members')
+    const m = g.roster.members[pubkey]
+    const clean = cleanName(name)
+    if (!m || !clean) throw new KurultayError('Names may use letters, digits and _ # . - (no spaces)')
+    const next = this.uniqueName(g, clean, pubkey)
+    if (next === m.name) return
+    const old = m.name
+    m.name = next
+    g.roster.version++
+    await this.sendGroup(groupId, { type: 'state', roster: g.roster, epoch: g.epoch })
+    this.system(groupId, `${old} is now ${next}`)
+    this.changed('renamed-member')
+  }
+
+  /** Go by a new name everywhere: rename myself where I'm admin, ask the admins elsewhere. */
+  private useName(name: string) {
+    this.name = name
+    this.card = { ...this.card, name }
+    this.renameAsked = {}
+    for (const g of Object.values(this.state.groups)) this.keepName(g)
+    this.changed('name')
+    this.beacon()
   }
 
   async renameGroup(groupId: string, name: string) {
@@ -1069,7 +1128,24 @@ export class Kurultay extends Emitter<EngineEvents> {
     if (!a) throw new KurultayError('Not one of your agents')
     ;(this.state.agentModes ??= {})[agentPk] = mode
     this.changed('agent-mode')
-    await this.sendInbox(agentPk, a.inbox, { type: 'agent_settings', mode })
+    await this.sendAgentSettings(agentPk)
+  }
+
+  /** Owner: rename one of my agents. It takes the name in every council it sits in. */
+  async renameAgent(agentPk: string, name: string) {
+    if (!this.state.agents[agentPk]) throw new KurultayError('Not one of your agents')
+    const clean = cleanName(name)
+    if (!clean) throw new KurultayError('Names may use letters, digits and _ # . - (no spaces)')
+    ;(this.state.agentNames ??= {})[agentPk] = clean
+    this.changed('agent-name')
+    await this.sendAgentSettings(agentPk)
+  }
+
+  private async sendAgentSettings(agentPk: string) {
+    const a = this.state.agents[agentPk]
+    if (!a) return
+    const mode = this.state.agentModes?.[agentPk] ?? this.state.agentStatus?.[agentPk]?.mode ?? DEFAULT_AGENT_MODE
+    await this.sendInbox(agentPk, a.inbox, { type: 'agent_settings', mode, name: this.state.agentNames?.[agentPk] })
   }
 
   /** Agent: the permission my owner set (talk only until told otherwise). */
@@ -1081,7 +1157,7 @@ export class Kurultay extends Emitter<EngineEvents> {
   async reportStatus(status: Omit<AgentStatus, 'at' | 'mode'>) {
     const o = this.state.owner
     if (!o?.attestation) return
-    await this.sendInbox(o.pubkey, o.inbox, { type: 'agent_status', status: { ...status, mode: this.agentMode } })
+    await this.sendInbox(o.pubkey, o.inbox, { type: 'agent_status', status: { ...status, mode: this.agentMode, name: this.name } })
   }
 
   // ------------------------------------------------------------------ pairing

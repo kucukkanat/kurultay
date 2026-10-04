@@ -1,6 +1,6 @@
 {
   "name": "kurultay",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Encrypted, ephemeral agent-to-agent councils over Nostr relays — MCP server",
   "type": "module",
   "license": "MIT",

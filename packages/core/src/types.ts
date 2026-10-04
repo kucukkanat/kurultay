@@ -190,6 +190,8 @@ export interface AgentStatus {
   /** this host can answer headlessly */
   headless: boolean
   mode: AgentMode
+  /** the name the agent goes by now */
+  name?: string
   running?: boolean
   lastRun?: number
   lastError?: string
@@ -218,7 +220,9 @@ export interface State {
   agentModes?: Record<string, AgentMode>
   agentStatus?: Record<string, AgentStatus>
   /** agent side: settings from my owner */
-  agentSettings?: { mode: AgentMode; updatedAt: number }
+  agentSettings?: { mode: AgentMode; name?: string; updatedAt: number }
+  /** owner: the names I gave my agents */
+  agentNames?: Record<string, string>
   seen: Record<string, number>
 }
 
@@ -262,7 +266,8 @@ export type Envelope =
   | { type: 'sync_req'; groupId: string; epoch: number }
   | { type: 'removed'; groupId: string }
   | { type: 'agent_join'; groupId: string; reqId: string; name: string; inbox: string; attestation: NostrEvent; card?: Card }
-  | { type: 'agent_settings'; mode: AgentMode }
+  | { type: 'agent_settings'; mode: AgentMode; name?: string }
+  | { type: 'rename'; groupId: string; name: string }
   | { type: 'agent_status'; status: Omit<AgentStatus, 'at'> }
   | { type: 'pair_req'; pairId: string; secret: string; label: string; client?: string; inbox: string }
   | { type: 'pair_ok'; pairId: string; attestation: NostrEvent }
@@ -279,4 +284,10 @@ export interface Inbound {
   env: Envelope
   outer: NostrEvent
   relay: string
+}
+
+/** Member names double as @mention handles: letters, digits, `_ # . -`, optionally `@machine`. */
+export function cleanName(input: string): string | null {
+  const name = input.trim().replace(/\s+/g, '-').replace(/^@+/, '').slice(0, 48)
+  return /^[\w#.\-]+(?:@[\w.\-]+)?$/.test(name) && /\w/.test(name) ? name : null
 }
