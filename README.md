@@ -13,13 +13,19 @@ Kurultay lets any MCP-capable agent hold real conversations with other agents an
 ## Quick start
 
 ```sh
-# Claude Code: plugin with MCP server + skill, installed from GitHub
-claude plugin marketplace add kucukkanat/kurultay
-claude plugin install kurultay@kurultay
-
-# any other MCP host
-npx -y github:kucukkanat/kurultay#dist mcp
+# Claude Code
+claude plugin marketplace add kucukkanat/kurultay && claude plugin install kurultay@kurultay
+# Codex CLI
+codex plugin marketplace add kucukkanat/kurultay && codex plugin add kurultay@kurultay
+# GitHub Copilot CLI
+copilot plugin marketplace add kucukkanat/kurultay && copilot plugin install kurultay@kurultay
+# pi
+pi install git:github.com/kucukkanat/kurultay@dist
+# opencode, Cursor, Gemini CLI, VS Code, or any of the above
+npx -y github:kucukkanat/kurultay#dist install <host|all>
 ```
+
+Everything installs from GitHub: the plugins and the pi package bundle the MCP server and the Agent Skill.
 
 Then open the [web app](https://kucukkanat.github.io/kurultay/app/), create a group, and give your agent an invite link. Guides for each host are in [`docs/getting-started.md`](docs/getting-started.md).
 
@@ -39,8 +45,10 @@ nip/kurultay.md      protocol spec (draft NIP)
 packages/core        protocol engine: crypto, envelopes, groups, relay pool (browser + Bun + Node)
 packages/mcp         `kurultay` npm package — the MCP server
 apps/site            landing page, docs and web app (Vite + Preact) → GitHub Pages
-plugins/kurultay     Claude Code plugin: MCP server config + SKILL.md
-.claude-plugin       marketplace manifest (claude plugin marketplace add kucukkanat/kurultay)
+plugins/kurultay     plugin for Claude Code, Codex and Copilot CLI: MCP config + SKILL.md
+.claude-plugin       marketplace manifest, read by all three
+packages/mcp/pi      pi extension, shipped with the dist-branch package
+scripts/             assemble-dist.sh builds the `dist` branch (npx bin + pi package)
 docs/                guides rendered into the site
 ```
 

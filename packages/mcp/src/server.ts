@@ -6,7 +6,7 @@ import { DEFAULT_RELAYS, Kurultay, KurultayError, type GroupState, type Message,
 import { claimInstance, FileStorage, sanitize, type Instance } from './instance'
 import { loadOrCreateKey, type KeySource } from './keystore'
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.2.0'
 
 const INSTRUCTIONS = `Kurultay lets you talk to other agents and humans in end-to-end encrypted group channels over Nostr relays. Relays only forward traffic; nothing is stored.
 
@@ -156,11 +156,12 @@ export function createServer(opts: ServerOptions = {}) {
   const ok = (data: unknown) => ({ content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] })
   const fail = (err: unknown) => ({ isError: true, content: [{ type: 'text' as const, text: (err as Error).message ?? String(err) }] })
 
-  function tool<S extends z.ZodRawShape>(name: string, description: string, shape: S, fn: (args: z.infer<z.ZodObject<S>>, e: Kurultay) => Promise<unknown> | unknown) {
-    server.registerTool(name, { description, inputSchema: shape } as any, (async (args: any) => {
+  type Extra = { _meta?: { progressToken?: string | number }; sendNotification?: (n: any) => Promise<void>; signal?: AbortSignal }
+  function tool<S extends z.ZodRawShape>(name: string, description: string, shape: S, fn: (args: z.infer<z.ZodObject<S>>, e: Kurultay, extra: Extra) => Promise<unknown> | unknown) {
+    server.registerTool(name, { description, inputSchema: shape } as any, (async (args: any, extra: Extra) => {
       try {
         const e = await E()
-        return ok(await fn(args, e))
+        return ok(await fn(args, e, extra ?? {}))
       } catch (err) {
         return fail(err)
       }
@@ -254,22 +255,37 @@ export function createServer(opts: ServerOptions = {}) {
     'Block until messages addressed to you arrive (mentions, DMs, tasks, task updates, approvals), or until the timeout. Returns all queued messages. Call again to keep listening.',
     {
       group: z.string().optional().describe('only return messages from this group'),
-      timeout_seconds: z.number().min(0).max(55).optional().describe('default 45'),
+      timeout_seconds: z.number().min(0).max(50).optional().describe('default 40; stays under the 60 s request timeout most MCP hosts use'),
     },
-    async ({ group: ref, timeout_seconds }, e) => {
+    async ({ group: ref, timeout_seconds }, e, extra) => {
       const gid = ref ? group(e, ref).id : undefined
       const match = (q: Delivered) => !gid || q.group === gid || q.type === 'system'
-      const deadline = Date.now() + (timeout_seconds ?? 45) * 1000
-      while (!queue.some(match) && Date.now() < deadline) {
-        await new Promise<void>((resolve) => {
-          const w = () => {
-            waiters.delete(w)
-            clearTimeout(t)
-            resolve()
-          }
-          const t = setTimeout(w, Math.max(0, deadline - Date.now()))
-          waiters.add(w)
-        })
+      const started = Date.now()
+      const deadline = started + (timeout_seconds ?? 40) * 1000
+      // progress notifications keep hosts that support resetTimeoutOnProgress (pi, opencode, …) from timing out
+      const token = extra._meta?.progressToken
+      const beat =
+        token !== undefined && extra.sendNotification
+          ? setInterval(() => {
+              void extra
+                .sendNotification!({ method: 'notifications/progress', params: { progressToken: token, progress: Math.round((Date.now() - started) / 1000), message: 'waiting for messages' } })
+                .catch(() => {})
+            }, 10_000)
+          : undefined
+      try {
+        while (!queue.some(match) && Date.now() < deadline && !extra.signal?.aborted) {
+          await new Promise<void>((resolve) => {
+            const w = () => {
+              waiters.delete(w)
+              clearTimeout(t)
+              resolve()
+            }
+            const t = setTimeout(w, Math.max(0, deadline - Date.now()))
+            waiters.add(w)
+          })
+        }
+      } finally {
+        if (beat) clearInterval(beat)
       }
       const out = queue.filter(match)
       for (const q of out) queue.splice(queue.indexOf(q), 1)

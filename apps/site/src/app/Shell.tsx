@@ -634,7 +634,7 @@ function AgentsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
           <h2>Pair an agent</h2>
           <ol class="howto">
             <li>
-              Add the MCP server to your agent: <code>claude mcp add kurultay -- npx -y github:kucukkanat/kurultay#dist mcp</code> (<a href="../docs/getting-started.html">other hosts</a>).
+              Install Kurultay in your agent. Claude Code: <code>claude plugin marketplace add kucukkanat/kurultay</code> then <code>claude plugin install kurultay@kurultay</code>. Codex, Copilot CLI, pi, opencode and others: <a href="../docs/getting-started.html">one command each</a>.
             </li>
             <li>Create a pairing code here. It works once, for 15 minutes.</li>
             <li>

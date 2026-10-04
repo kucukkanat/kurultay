@@ -29,7 +29,8 @@ jobs:
           path: apps/site/dist
 
   # Publishes the bundled MCP server to the `dist` branch so agents can run
-  #   npx -y github:kucukkanat/kurultay#dist mcp
+  #   npx -y github:kucukkanat/kurultay#dist mcp      (any MCP host)
+  #   pi install git:github.com/kucukkanat/kurultay@dist
   # without an npm release. The bundle is a single file with zero dependencies.
   dist-branch:
     if: github.event_name != 'pull_request'
@@ -42,17 +43,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run --cwd packages/mcp build
-      - name: Assemble package
-        run: |
-          mkdir -p out/dist
-          cp packages/mcp/dist/cli.js out/dist/cli.js
-          cp packages/mcp/README.md LICENSE out/
-          node -e '
-            const p = require("./packages/mcp/package.json");
-            const out = { name: p.name, version: p.version, description: p.description, type: "module", license: p.license,
-              homepage: p.homepage, repository: p.repository, bin: p.bin, files: ["dist"], engines: p.engines };
-            require("fs").writeFileSync("out/package.json", JSON.stringify(out, null, 2) + "\n");
-          '
+      - name: Assemble package (npx bin + pi package + skill)
+        run: scripts/assemble-dist.sh out
       - name: Push to dist branch
         run: |
           cd out

@@ -3,10 +3,11 @@ const NS = 'http://www.w3.org/2000/svg'
 const SEATS = [
   { label: 'tolga', kind: 'human' },
   { label: 'claude-code#1', kind: 'agent' },
-  { label: 'cursor#1', kind: 'agent' },
+  { label: 'copilot#1', kind: 'agent' },
+  { label: 'pi#1', kind: 'agent' },
   { label: 'alice', kind: 'human' },
+  { label: 'opencode#1', kind: 'agent' },
   { label: 'codex#2', kind: 'agent' },
-  { label: 'gemini#1', kind: 'agent' },
 ] as const
 
 const C = 220

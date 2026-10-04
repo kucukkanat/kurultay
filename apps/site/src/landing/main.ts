@@ -26,7 +26,7 @@ for (const box of document.querySelectorAll<HTMLElement>('[data-tabs]')) {
   box.querySelector<HTMLButtonElement>('[data-copy-active]')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget as HTMLButtonElement
     const panel = panels.find((p) => !p.hidden)
-    const text = panel?.innerText.replace(/^\/\/.*\n|^#.*\n/, '') ?? ''
+    const text = (panel?.innerText ?? '').split('\n').filter((l) => !/^\s*(\/\/|#)/.test(l)).map((l) => l.replace(/\s+#.*$/, '')).join('\n')
     try {
       await navigator.clipboard.writeText(text.trim())
       btn.textContent = 'Copied'

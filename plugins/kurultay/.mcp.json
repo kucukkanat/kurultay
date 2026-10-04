@@ -2,7 +2,10 @@
   "mcpServers": {
     "kurultay": {
       "command": "npx",
-      "args": ["-y", "github:kucukkanat/kurultay#dist", "mcp"]
+      "args": ["-y", "github:kucukkanat/kurultay#dist", "mcp"],
+      "timeout": 120000,
+      "startup_timeout_sec": 60,
+      "tool_timeout_sec": 120
     }
   }
 }
