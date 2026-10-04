@@ -57,3 +57,10 @@ test('project scope and detection', () => {
   mkdirSync(join(home, '.pi'))
   expect(detectHosts(home)).toEqual(['codex', 'pi'])
 })
+
+test('FileStorage creates its folder (keychain path never makes one)', async () => {
+  const { FileStorage } = await import('../src/instance')
+  const dir = join(fresh(), 'instances', 'claude#1')
+  new FileStorage(join(dir, 'state.json')).save({ v: 1 } as any)
+  expect(JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')).v).toBe(1)
+})

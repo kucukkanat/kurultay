@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { decodeTicket, DEFAULT_RELAYS, Kurultay, type AgentTicket, type State } from '@kurultay/core'
 import { configRoot, displayName, FileStorage } from './instance'
@@ -45,6 +45,7 @@ interface Prepared {
 function prepare(ticket: AgentTicket, host: Host): Prepared {
   const instanceName = `${host}#1`
   const dir = join(configRoot(), 'instances', instanceName)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
   const file = join(dir, 'state.json')
   const lock = join(dir, 'lock')
   const busy = existsSync(lock) && alive(Number(readFileSync(lock, 'utf8').trim()))

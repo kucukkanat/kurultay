@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir, hostname } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { State, Storage } from '@kurultay/core'
 
 export function configRoot() {
@@ -68,6 +68,7 @@ export class FileStorage implements Storage {
     }
   }
   save(state: State) {
+    mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 })
     const tmp = this.file + '.tmp'
     writeFileSync(tmp, JSON.stringify(state), { mode: 0o600 })
     renameSync(tmp, this.file)
