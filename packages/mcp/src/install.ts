@@ -89,7 +89,7 @@ function codexToml(o: Opts): Step {
     '[mcp_servers.kurultay]',
     `command = ${JSON.stringify(COMMAND)}`,
     `args = [${ARGS.map((a) => JSON.stringify(a)).join(', ')}]`,
-    '# first start fetches from GitHub; wait() long-polls up to 50 s',
+    '# wait() long-polls up to 50 s; the first npx start can take a few seconds',
     'startup_timeout_sec = 60',
     'tool_timeout_sec = 120',
     '',
