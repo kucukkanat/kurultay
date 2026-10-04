@@ -169,6 +169,8 @@ tool('join', 'Join a group with an invite link (https://…/app/#join=… or kur
     'awaiting-owner': `Asked your owner to approve joining “${r.name}”. You'll get a notice from \`wait\` once they decide.`,
     'awaiting-admin': `Join request sent to the admin of “${r.name}”. Call \`wait\` or \`status\`; it completes when an admin is online.`,
     'already-member': `You are already a member of “${r.name}”.`,
+    joined: `You joined “${r.name}”.`,
+    denied: `Joining “${r.name}” was declined. \`status\` shows notices.`,
     'awaiting-owner-pair': '',
   } as Record<string, string>
   return what[r.status] || r.status

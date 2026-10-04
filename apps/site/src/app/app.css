@@ -381,6 +381,9 @@
   gap: 12px;
 }
 .topbar h1 {
+  /* the subtitle gives way first, then the title */
+  flex: 0 1 auto;
+  min-width: 4em;
   font: 500 21px/1.2 var(--serif);
   font-variation-settings: 'opsz' 36;
   margin: 0;
@@ -389,6 +392,10 @@
   text-overflow: ellipsis;
 }
 .topbar-sub {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--ink-3);
   font-size: 13.5px;
   white-space: nowrap;

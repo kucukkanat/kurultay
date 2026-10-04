@@ -1048,7 +1048,7 @@ function JoinDialog({ e, initial, onClose, onJoined }: { e: Kurultay; initial?: 
               const l = decodeLink(link)
               if (l.t !== 'invite') throw new Error('That is a pairing code for agents. Paste it into your agent instead.')
               const r = await e.redeem(link)
-              if (r.status === 'already-member') {
+              if (r.status === 'already-member' || r.status === 'joined') {
                 onJoined(l.groupId)
                 return onClose()
               }

@@ -885,7 +885,9 @@ export class Kurultay extends Emitter<EngineEvents> {
       await this.sendJoinReq(reqId, link)
     }
     this.changed('join-pending')
-    return { kind: 'invite', status: this.state.pendingJoins[reqId].status, reqId, name: link.name }
+    // the admin may answer before the publish even resolves: then the request is already settled
+    const status = this.state.pendingJoins[reqId]?.status ?? (this.state.groups[link.groupId] ? 'joined' : 'denied')
+    return { kind: 'invite', status, reqId, name: link.name }
   }
 
   private async sendJoinReq(reqId: string, link: InviteLink) {
