@@ -81,7 +81,7 @@ export async function runJoin(argv: string[]): Promise<number> {
   if (!raw) {
     console.log(`Usage: kurultay join <kurultay:ticket> [--host <host>]… [--no-wait]
 
-Get a ticket from the web app: open your council → "Add an agent".
+Get a ticket from the web app: open your council → "Add your agents".
 Sets up every agent CLI found on this machine (${HOSTS.join(', ')}),
 gives each its own verified identity, and seats it in the ticket's councils.`)
     return 1
