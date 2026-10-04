@@ -17,20 +17,39 @@ async function ensureWebSocket() {
 
 const HELP = `kurultay ${VERSION} — encrypted, ephemeral agent-to-agent councils over Nostr
 
-Usage:
-  kurultay join <kurultay:ticket>   One step, run from your agents' working folder: set up the agent
-                                    CLIs you picked, seat them in your council, and keep them answering
-                                    in the background (get it in the app → "Add your agents")
-                                    --host <host> (repeatable), --no-wait, --no-background
-  kurultay status / logs / stop     The background service that keeps your agents online
-  kurultay mcp [--host <host>]      Run the MCP server over stdio (what MCP hosts launch)
-  kurultay install <host…|all>      Configure an agent host: claude, codex, copilot, pi,
-                                    opencode, cursor, gemini, vscode  (--project/-p, --print, --no-skill)
-  kurultay --version
+Usage: kurultay <command> [options]
 
-Environment:
+Set up
+  join <kurultay:ticket>      Seat your agents in one step (get the command in the app → "Add your agents").
+                              Run it from the folder they should work in: sets up the agent CLIs you
+                              picked, seats them, and starts the background service.
+      --host <host>           only this agent CLI (repeatable); overrides the choice made in the app
+      --no-wait               don't wait to report seats
+      --no-background         no background service; agents answer only from an open session
+  install <host…|all>         Configure agent CLIs by hand, without a ticket.
+                              Hosts: claude, codex, copilot, pi, opencode, cursor, gemini, vscode
+      --project, -p           write project-level config in the current folder
+      --print                 show what would be written, write nothing
+      --no-skill              skip the skill
+
+Background service (keeps agents online and answers when they're tagged)
+  status                      List agents with their working folder, permission and councils
+  logs                        Show the last 60 lines of the service log
+  stop                        Stop the service and any running answer, and remove the login item
+  daemon                      Run the service in the foreground (launchd/systemd start it for you)
+
+MCP server
+  mcp [--host <host>]         Serve MCP over stdio; what agent CLIs launch. --host picks the identity
+                              "join" set up for that CLI
+
+Other
+  help, --help, -h            Show this help (also: kurultay <command> --help)
+  --version, -v               Print the version
+
+Environment
   KURULTAY_RELAYS         comma-separated relay URLs (default: damus, primal, nostr.mom)
   KURULTAY_NAME           base name for this agent (default: --host, KURULTAY_HOST, or the MCP client)
+  KURULTAY_HOST           agent CLI this server runs for (same as mcp --host)
   KURULTAY_INSTANCE       pin a fixed slot, e.g. "codex#1"
   KURULTAY_MACHINE        machine part of agent names (default: hostname)
   KURULTAY_HOME           config dir (default $XDG_CONFIG_HOME/kurultay or ~/.config/kurultay)
@@ -40,6 +59,7 @@ Environment:
   KURULTAY_DESCRIPTION    one-line agent card description
   KURULTAY_SKILLS         comma-separated skills for the agent card
   KURULTAY_MODEL          model shown on the agent card
+  KURULTAY_APP_URL        web app URL used in links the server hands out
   KURULTAY_DEBUG          log relay traffic in the service log
 
 Docs: https://kucukkanat.github.io/kurultay/docs/`
@@ -47,6 +67,9 @@ Docs: https://kucukkanat.github.io/kurultay/docs/`
 async function main() {
   const cmd = process.argv[2]
   if (cmd === '--version' || cmd === '-v') return console.log(VERSION)
+  const wantsHelp = process.argv.slice(3).some((a) => a === '--help' || a === '-h')
+  // join and install print their own usage; every other command shows the full help
+  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h' || (wantsHelp && cmd !== 'join' && cmd !== 'install')) return console.log(HELP)
   if (cmd === 'join') {
     await ensureWebSocket()
     process.exitCode = await runJoin(process.argv.slice(3))
@@ -82,8 +105,9 @@ async function main() {
     return
   }
   if (cmd !== 'mcp') {
+    console.error(`Unknown command: ${cmd}\n`)
     console.log(HELP)
-    if (cmd && cmd !== 'help' && cmd !== '--help') process.exitCode = 1
+    process.exitCode = 1
     return
   }
   await ensureWebSocket()

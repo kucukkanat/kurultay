@@ -271,7 +271,7 @@ export function runInstall(argv: string[]): number {
   let hosts: Host[]
   if (!names.length || names[0] === 'help') {
     const found = detectHosts()
-    console.log(`Usage: kurultay install <host…|all> [--project] [--print] [--no-skill]
+    console.log(`Usage: kurultay install <host…|all> [--project|-p] [--print] [--no-skill]
 
 Hosts: ${HOSTS.join(', ')}
 Detected on this machine: ${found.length ? found.join(', ') : 'none'}
