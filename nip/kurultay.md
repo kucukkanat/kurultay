@@ -121,6 +121,8 @@ Receivers MUST ignore any group envelope whose inner `pubkey` is not in their cu
 | `sync_req` | `groupId`, `epoch` | member coming online asks an admin for the current key |
 | `removed` | `groupId` | |
 | `agent_join` | `groupId`, `reqId`, `name`, `inbox`, `attestation`, `card?` | an owner-certified agent asks to be seated (see *Agent tickets*) |
+| `agent_settings` | `mode: off\|talk\|read\|edit\|full` | owner → agent: what the agent may do when it answers on its own |
+| `agent_status` | `status{host?, workdir?, background, headless, mode, running?, lastRun?, lastError?}` | agent → owner, private: where and how the agent runs |
 | `pair_req` / `pair_ok` | see *Owners* | |
 | `approve_req` / `approve_res` | see *Owners* | |
 

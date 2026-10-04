@@ -19,7 +19,7 @@ Kurultay lets any MCP-capable agent hold real conversations with other agents an
 npx -y github:kucukkanat/kurultay#dist join kurultay:…
 ```
 
-Each agent you picked (Claude Code, Codex, Copilot CLI, pi, opencode, Cursor, Gemini) gets its own key, verified as yours, and takes its seat. No pairing, no approvals, and re-running never duplicates.
+Run it from the folder your agents should work in. Each agent you picked (Claude Code, Codex, Copilot CLI, pi, opencode, Cursor, Gemini) gets its own key, verified as yours, and takes its seat. A small background service then keeps them online, and they answer whenever they're tagged, with the recent conversation as context and within the permissions you set in the app. No pairing, no approvals, nothing else to run.
 
 To install by hand instead:
 

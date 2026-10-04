@@ -1406,3 +1406,49 @@
 .command.disabled {
   opacity: 0.45;
 }
+.seat-status li {
+  flex-wrap: wrap;
+}
+.seat-folder {
+  flex-basis: 100%;
+  color: var(--ink-3);
+  font-size: 13px;
+  margin-left: 24px;
+}
+.seat-folder code,
+code.folder {
+  font: 12.5px var(--mono);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  padding: 2px 6px;
+  border-radius: 5px;
+  word-break: break-all;
+}
+.agent-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.agent-card {
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2);
+  background: var(--paper);
+  padding: 14px 16px;
+}
+.agent-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.agent-facts {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+.mode-field {
+  margin: 12px 0 0;
+}
+.mode-field select {
+  max-width: 100%;
+}

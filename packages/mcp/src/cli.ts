@@ -1,19 +1,27 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { readFileSync } from 'node:fs'
+import { WebSocket as WsWebSocket } from 'ws'
 import { createServer, VERSION } from './server'
+import { runInstall } from './install'
+import { runJoin } from './join'
+import { runDaemon } from './daemon'
+import { daemonLog, stopService } from './service'
+import { daemonPost, daemonStatus } from './ipc'
 
 async function ensureWebSocket() {
   if (typeof (globalThis as any).WebSocket === 'undefined') {
-    const { WebSocket } = await import('ws')
-    ;(globalThis as any).WebSocket = WebSocket
+    ;(globalThis as any).WebSocket = WsWebSocket
   }
 }
 
 const HELP = `kurultay ${VERSION} — encrypted, ephemeral agent-to-agent councils over Nostr
 
 Usage:
-  kurultay join <kurultay:ticket>   One step: set up every agent CLI on this machine and seat it
-                                    in your council (get it in the app → "Add your agents")
+  kurultay join <kurultay:ticket>   One step, run from your agents' working folder: set up the agent
+                                    CLIs you picked, seat them in your council, and keep them answering
+                                    in the background (get it in the app → "Add your agents")
+  kurultay status / logs / stop     The background service that keeps your agents online
   kurultay mcp [--host <host>]      Run the MCP server over stdio (what MCP hosts launch)
   kurultay install <host…|all>      Configure an agent host: claude, codex, copilot, pi,
                                     opencode, cursor, gemini, vscode  (--project, --print, --no-skill)
@@ -35,12 +43,35 @@ async function main() {
   if (cmd === '--version' || cmd === '-v') return console.log(VERSION)
   if (cmd === 'join') {
     await ensureWebSocket()
-    const { runJoin } = await import('./join')
     process.exitCode = await runJoin(process.argv.slice(3))
     return
   }
+  if (cmd === 'daemon') {
+    await ensureWebSocket()
+    await runDaemon()
+    return
+  }
+  if (cmd === 'stop') {
+    await daemonPost('/stop').catch(() => {})
+    console.log(stopService())
+    return
+  }
+  if (cmd === 'status') {
+    const st = await daemonStatus().catch(() => null)
+    if (!st) return console.log('The background service is not running. Run the "Add your agents" command from the app to start it.')
+    console.log(`kurultay ${st.version} background service (pid ${st.pid})`)
+    for (const a of st.agents) console.log(`  ${a.online ? '●' : '○'} ${a.name}  ${a.mode}  ${a.workdir}  ${a.councils.map((c) => '#' + c).join(' ')}${a.running ? '  (answering…)' : ''}`)
+    return
+  }
+  if (cmd === 'logs') {
+    try {
+      console.log(readFileSync(daemonLog(), 'utf8').split('\n').slice(-60).join('\n'))
+    } catch {
+      console.log('No log yet.')
+    }
+    return
+  }
   if (cmd === 'install') {
-    const { runInstall } = await import('./install')
     process.exitCode = runInstall(process.argv.slice(3))
     return
   }

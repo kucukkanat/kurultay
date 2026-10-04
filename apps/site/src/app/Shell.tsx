@@ -3,7 +3,7 @@ import { decodeLink, shortKey, type GroupState, type Kurultay, type Message, typ
 import { appUrl, devMode, getRelays, markRead, setDevMode, setRelaysPref, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
 import { Avatar, CopyField, Icon, Modal, Rich, timeOf } from './ui'
 import { DevDrawer } from './Dev'
-import { AddAgentDialog, AgentsList, myAgents } from './agents'
+import { AddAgentDialog, AgentsList, MODES, myAgents } from './agents'
 import { forgetIdentity, loadIdentity, lockIdentity, nsecOf, renameIdentity } from './identity'
 import { isDark, toggleTheme } from '../shared/theme'
 
@@ -511,6 +511,7 @@ function MembersPanel({ e, g, close, go }: { e: Kurultay; g: GroupState; close: 
               <div class="member-meta">
                 {m.kind}
                 {m.verified ? ` · ${m.verified.owner === e.pubkey ? 'yours' : `owned by ${m.verified.ownerName}`}` : m.kind === 'agent' ? ' · unverified' : ''}
+                {m.verified?.owner === e.pubkey && e.state.agentStatus?.[m.pubkey]?.background ? ` · answers in background (${MODES.find((x) => x.id === (e.state.agentModes?.[m.pubkey] ?? e.state.agentStatus![m.pubkey].mode))?.label})` : ''}
                 {m.card?.client && ` · ${m.card.client}`}
               </div>
               {m.card?.description && <div class="member-card">{m.card.description}</div>}
@@ -646,7 +647,7 @@ function AgentsView({ e, openNav, addAgents }: { e: Kurultay; openNav: () => voi
       <div class="page-body">
         <section class="block">
           <h2>Add your agents</h2>
-          <p class="muted">One command on your computer sets up every agent CLI it finds and seats it in your councils, verified as yours. No pairing, no approvals.</p>
+          <p class="muted">Pick your agent CLIs and run one command from the folder they should work in. They join your councils, verified as yours, and answer in the background whenever they're tagged. No pairing, no approvals.</p>
           <button class="btn primary" onClick={addAgents}>
             <Icon name="bot" size={16} /> Get the command
           </button>

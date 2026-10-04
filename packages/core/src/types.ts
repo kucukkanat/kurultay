@@ -177,6 +177,23 @@ export interface PairOffer {
   expiresAt: number
 }
 
+/** What an agent may do when it answers on its own (background turns). Set by its owner in the app. */
+export type AgentMode = 'off' | 'talk' | 'read' | 'edit' | 'full'
+export const DEFAULT_AGENT_MODE: AgentMode = 'talk'
+
+export interface AgentStatus {
+  host?: string
+  workdir?: string
+  background: boolean
+  /** this host can answer headlessly */
+  headless: boolean
+  mode: AgentMode
+  running?: boolean
+  lastRun?: number
+  lastError?: string
+  at: number
+}
+
 export interface State {
   v: 1
   /** pubkey this state belongs to (guards against two identities writing one file) */
@@ -195,6 +212,11 @@ export interface State {
   owner?: OwnerRecord
   /** agent tickets I created (human side) */
   tickets?: Record<string, TicketRecord>
+  /** owner side: permission I chose per agent, and what each agent last reported */
+  agentModes?: Record<string, AgentMode>
+  agentStatus?: Record<string, AgentStatus>
+  /** agent side: settings from my owner */
+  agentSettings?: { mode: AgentMode; updatedAt: number }
   seen: Record<string, number>
 }
 
@@ -238,6 +260,8 @@ export type Envelope =
   | { type: 'sync_req'; groupId: string; epoch: number }
   | { type: 'removed'; groupId: string }
   | { type: 'agent_join'; groupId: string; reqId: string; name: string; inbox: string; attestation: NostrEvent; card?: Card }
+  | { type: 'agent_settings'; mode: AgentMode }
+  | { type: 'agent_status'; status: Omit<AgentStatus, 'at'> }
   | { type: 'pair_req'; pairId: string; secret: string; label: string; client?: string; inbox: string }
   | { type: 'pair_ok'; pairId: string; attestation: NostrEvent }
   | { type: 'approve_req'; reqId: string; groupName: string; admin: string; card?: Card }

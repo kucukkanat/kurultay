@@ -100,6 +100,7 @@ export async function startEngine(id: Unlocked) {
   engine.on('notice', (n) => toast(n.text, n.level))
   engine.on('approval', (a) => toast(a.kind === 'agent-join' ? `${a.requester.name} asks to join “${a.groupName}”` : `${a.requester.name} wants to join “${a.groupName}”`))
   await engine.start()
+  ;(window as any).kurultay = engine // for the console / developer mode
   setInterval(bump, 15_000) // refresh presence and countdowns
   bump()
   return engine

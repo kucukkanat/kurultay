@@ -20,6 +20,9 @@ import {
   ROUTE_TAG,
   KIND_WRAP,
   AGENT_HOSTS,
+  DEFAULT_AGENT_MODE,
+  type AgentMode,
+  type AgentStatus,
   type AgentTicket,
   type Approval,
   type Card,
@@ -107,6 +110,7 @@ type EngineEvents = {
   relay: RelayInfo
   approval: Approval
   notice: { level: 'info' | 'warn' | 'error'; text: string; groupId?: string }
+  settings: { mode: AgentMode }
 }
 
 const ONLINE_WINDOW = 150
@@ -417,6 +421,23 @@ export class Kurultay extends Emitter<EngineEvents> {
         return this.onJoinReq(from, env)
       case 'agent_join':
         return this.onAgentJoin(from, env)
+      case 'agent_settings': {
+        if (!this.state.owner || from !== this.state.owner.pubkey) return
+        this.state.agentSettings = { mode: env.mode, updatedAt: now() }
+        this.emit('settings', { mode: env.mode })
+        this.changed('settings')
+        return
+      }
+      case 'agent_status': {
+        if (!this.state.agents[from]) return
+        const st = (this.state.agentStatus ??= {})
+        st[from] = { ...env.status, at: now() }
+        // the agent came online with an older setting than the one I chose: send mine again
+        const want = this.state.agentModes?.[from]
+        if (want && want !== env.status.mode) void this.setAgentMode(from, want)
+        this.changed('agent-status')
+        return
+      }
       case 'key':
         return this.onKey(from, env)
       case 'deny': {
@@ -1025,6 +1046,29 @@ export class Kurultay extends Emitter<EngineEvents> {
       }
     }
     return { sk: a.sk, pubkey: a.pk, state }
+  }
+
+  // ------------------------------------------------------------------ agent settings
+
+  /** Owner: choose what one of my agents may do when it answers on its own. */
+  async setAgentMode(agentPk: string, mode: AgentMode) {
+    const a = this.state.agents[agentPk]
+    if (!a) throw new KurultayError('Not one of your agents')
+    ;(this.state.agentModes ??= {})[agentPk] = mode
+    this.changed('agent-mode')
+    await this.sendInbox(agentPk, a.inbox, { type: 'agent_settings', mode })
+  }
+
+  /** Agent: the permission my owner set (talk only until told otherwise). */
+  get agentMode(): AgentMode {
+    return this.state.agentSettings?.mode ?? DEFAULT_AGENT_MODE
+  }
+
+  /** Agent: tell my owner (privately) where I work and what I'm doing. */
+  async reportStatus(status: Omit<AgentStatus, 'at' | 'mode'>) {
+    const o = this.state.owner
+    if (!o?.attestation) return
+    await this.sendInbox(o.pubkey, o.inbox, { type: 'agent_status', status: { ...status, mode: this.agentMode } })
   }
 
   // ------------------------------------------------------------------ pairing

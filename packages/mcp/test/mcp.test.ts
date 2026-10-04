@@ -17,7 +17,7 @@ afterAll(async () => {
 })
 
 async function agent(name: string) {
-  const app = createServer({ relays: [relay.url] })
+  const app = createServer({ relays: [relay.url], noDaemon: true })
   apps.push(app)
   const [a, b] = InMemoryTransport.createLinkedPair()
   await app.connect(a)

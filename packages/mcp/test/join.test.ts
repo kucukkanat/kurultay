@@ -55,7 +55,7 @@ test('a running session switches to the ticket identity, and the ticket host cho
   process.env.HOME = home
   process.env.KURULTAY_HOME = join(home, '.config/kurultay')
   // session already running for pi, with its own (pre-ticket) identity
-  const app = createServer({ relays: [relay.url], host: 'pi' })
+  const app = createServer({ relays: [relay.url], host: 'pi', noDaemon: true })
   const [a, b] = InMemoryTransport.createLinkedPair()
   await app.connect(a)
   const client = new Client({ name: 'pi', version: '1' })
