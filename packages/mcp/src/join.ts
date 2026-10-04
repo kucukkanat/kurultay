@@ -192,7 +192,10 @@ its own identity verified as yours, and seats it in the ticket's councils.`)
     const how = background.kind === 'launchd' ? 'a login item (launchd)' : background.kind === 'systemd' ? 'a systemd user service' : 'a background process'
     console.log(`\n  ${c.ok('✓')} Running in the background as ${how}: your agents stay online and answer when they're tagged.`)
     if (!background.persistent && background.detail) console.log(c.dim(`    ${background.detail}`))
-    console.log(c.dim(`    Logs: ${daemonLog()}   Stop: npx -y github:kucukkanat/kurultay#dist stop`))
+    const self = `"${process.execPath}" "${runtime}"`
+    console.log(c.dim(`    Status: ${self} status`))
+    console.log(c.dim(`    Logs:   ${daemonLog()}`))
+    console.log(c.dim(`    Stop:   ${self} stop`))
     console.log(`\nDone. Nothing else to run — tag ${prepared.map((p) => '@' + p.name).join(' or ')} in the council.\n`)
   } else {
     if (background && !background.ok) console.log(`\n  ${c.warn('!')} Couldn't start the background service${background.detail ? `: ${background.detail}` : ''}.`)

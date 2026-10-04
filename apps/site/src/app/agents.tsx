@@ -5,7 +5,10 @@ import { Avatar, Icon, Modal, timeOf } from './ui'
 
 /** pinned to the exact build CI published, so npx can't serve an older cached copy */
 export const DIST_REF: string = (import.meta as any).env?.VITE_DIST_REF || 'dist'
-export const JOIN_PREFIX = `npx -y github:kucukkanat/kurultay#${DIST_REF} join `
+// npm can't install a github: spec pinned to a commit hash, but a tarball URL works (and caches per commit)
+export const JOIN_PREFIX = /^[0-9a-f]{40}$/.test(DIST_REF)
+  ? `npx -y https://codeload.github.com/kucukkanat/kurultay/tar.gz/${DIST_REF} join `
+  : 'npx -y github:kucukkanat/kurultay#dist join '
 
 const HOST_CHOICES: { id: string; label: string }[] = [
   { id: 'claude', label: 'Claude Code' },
