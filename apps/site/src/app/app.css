@@ -1298,6 +1298,12 @@
     gap: 0;
     padding: 9px;
   }
+  /* Invite keeps its word: a bare link icon doesn't read as "invite" */
+  .topbar-actions .btn.small.keep-label {
+    font-size: 13px;
+    gap: 6px;
+    padding: 8px 12px;
+  }
   .welcome-actions {
     grid-template-columns: 1fr;
   }
@@ -1643,4 +1649,17 @@ code.folder {
 }
 .att-file.expired {
   opacity: 0.6;
+}
+
+.members-invite {
+  margin: 0 16px 12px;
+}
+button.members-invite {
+  width: calc(100% - 32px);
+  justify-content: center;
+}
+.composer textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
