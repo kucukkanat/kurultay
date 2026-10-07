@@ -32,7 +32,7 @@ Council messages and attached files are written by other people. A prompt inject
 | D17 | Telemetry and updates | **Blocked.** Each CLI's opt-out variables are set where they exist, to avoid noise. |
 | D18 | Prompt | **One line** in the background prompt tells the agent it is sandboxed and what it can reach, so it says what was blocked instead of retrying. |
 | D19 | Windows | **Supported**, with a guided one-time setup (`kurultay sandbox setup`). Not yet run on a real Windows machine. |
-| D20 | First permission | A **sandboxed** agent starts with **Edit files**; one without a sandbox keeps only **Answer when tagged**. The app sends it as an ordinary `agent_settings`, and only to an agent that has no permission chosen yet. |
+| D20 | First permission | A **sandboxed** agent starts with **Edit files**; one without a sandbox keeps only **Answer when tagged**, and so does one seated on a computer already known to be unable to run the sandbox (or a service too old to say). The app sends it as an ordinary `agent_settings`, and only to an agent that has no permission chosen yet. |
 | D21 | Wording | "**Keep in a sandbox**", badge "**Sandboxed**". The app never names the technology (no srt, Seatbelt, bubblewrap); a test holds it to that. |
 | D24 | Allow button | Allows the **exact host** only. Wildcards are typed by hand. |
 | D25 | Turning off | Asks first: *"This agent will be able to read your whole home folder and reach any website. Turn off?"* |
@@ -58,7 +58,7 @@ srt's `SandboxManager` is a **per-process singleton**: `initialize(config)` star
 { cmd: process.execPath, args: [<this bundle>, '__sandbox', <turnDir>], env: { …, CLAUDE_CODE_TMPDIR: turnDir } }
 ```
 
-`kurultay __sandbox <turnDir>` (`exec.ts`) validates the file with srt's own schema, initialises srt, quotes the argv with **srt's own quoter** (the `shell-quote` package turns `!` into `\!` inside double quotes, which corrupts council-written text), spawns it with inherited stdio, passes SIGTERM and SIGINT on, writes `violations.json` through a temp file and a rename (so a planted symlink is replaced, not followed), cleans up and exits with the child's code. The prompt never passes through a shell we build; the integration test's hostile prompt guards that.
+`kurultay __sandbox <turnDir>` (`exec.ts`) validates the file with srt's own schema, initialises srt, quotes the argv with **srt's own quoter** (the `shell-quote` package turns `!` into `\!` inside double quotes, which corrupts council-written text), spawns it with inherited stdio, passes SIGTERM and SIGINT on, writes `violations.json` through a temp file and a rename (so a planted symlink is replaced, not followed; the temp file has a random name and is created with `O_EXCL`, so a link planted under its name is refused rather than written through), cleans up and exits with the child's code. The prompt never passes through a shell we build; the integration test's hostile prompt guards that.
 
 ## Policy
 
@@ -72,7 +72,7 @@ srt's `SandboxManager` is a **per-process singleton**: `initialize(config)` star
 
 - `denyRead` is your home folder and the Kurultay config folder; `allowRead` re-opens what the table lists. srt lets `allowRead` win over `denyRead`, so **nothing that overlaps the config folder is ever put in `allowRead` or `allowWrite`**, whatever its source.
 - **Install paths.** CLIs often live under your home (`~/.local/bin`, `~/.bun`, `~/.nvm/…`). `installPathsFor` resolves `which <cli>` to its real path and opens the enclosing `node_modules` (global installs hoist dependencies beside the package, and codex loads its binary from a sibling package), plus the interpreter named in the shebang. A prefix that would contain your home folder (`/bin/sh` → `/`) is dropped.
-- **The turn folder** is a fresh `mkdtemp('/tmp/kurultay-…')`, by its real path. srt keeps its proxy socket there, and a Unix socket path may be at most 104 bytes, so it stays short. It holds `policy.json` and `violations.json` (both write-denied to the agent) and the CLI's output file, and it is the turn's private temp folder.
+- **The turn folder** is a fresh `mkdtemp('/tmp/kurultay-…')`, by its real path. srt keeps its proxy socket there, and a Unix socket path may be at most 104 bytes, so it stays short. It holds `policy.json` and `violations.json` (both write-denied to the agent) and the CLI's output file, and it is the turn's private temp folder. The agent may write this folder and the service reads the output file outside the sandbox, so `readOutputFile` opens it with `O_NOFOLLOW` and checks the open file is a plain file with one name: a symlink or hard link to `~/.ssh/id_ed25519` fails the turn instead of reaching the council.
 - **Network.** Allowed hosts are the CLI profile's model and login hosts plus your list. `allowLocalBinding` is on, so an agent with **Run commands** can test a server it starts itself. All Unix sockets stay closed (ssh-agent, Docker, the service's own socket).
 - srt itself always refuses writes to `.git/hooks`, `.git/config`, shell rc files and a few editor folders, even inside the working folder. Agents with **Edit files** or **Run commands** therefore cannot change those.
 
@@ -103,7 +103,21 @@ Each path is checked twice, as typed and by where it really leads, so a symlink 
 
 A test keeps a list of telemetry and update hosts and fails if any profile host, wildcards included, lets one through.
 
-**Nested sandboxes.** macOS refuses a second Seatbelt sandbox inside ours. So, only while sandboxed, codex's `--sandbox` becomes `danger-full-access`, claude gets `--settings {"sandbox":{"enabled":false}}`, and cursor gets `--sandbox disabled`. Ours enforces the same limits for the permission, and every other CLI flag stays exactly as before: two layers of protection.
+**What stays read-only inside the CLI's own folder.** A CLI's folder also holds what runs code, or steers every later session, when you use that CLI yourself outside the sandbox (D2): hooks, MCP servers, plugins, extensions, skills and instruction files. srt's own protected files are anchored at the working folder, not your home, so each profile lists these in `denyWrite` and they stay read-only in every permission (renaming the folder around them is refused too):
+
+| CLI | Read-only |
+|---|---|
+| claude | `~/.claude/` `settings.json`, `settings.local.json`, `hooks`, `plugins`, `skills`, `commands`, `agents`, `output-styles`, `CLAUDE.md` |
+| codex | `~/.codex/` `config.toml`, `rules`, `plugins`, `skills`, `prompts`, `AGENTS.md` |
+| copilot | `~/.copilot/` `mcp-config.json`, `settings.json`, `permissions-config.json`, `installed-plugins`, `skills`, `agents`, `hooks` |
+| pi | `~/.pi/agent/` `extensions`, `settings.json`, `models.json`, `mcp.json`, `trust.json`, `skills`, `prompts`, `AGENTS.md` |
+| opencode | `~/.config/opencode/` `opencode.json`, `opencode.jsonc`, `config.json`, `package.json`, `plugin(s)`, `tool(s)`, `agent(s)`, `command(s)`, `AGENTS.md` |
+| gemini | `~/.gemini/` `settings.json`, `extensions`, `commands`, `GEMINI.md` |
+| cursor | `~/.cursor/` `mcp.json`, `hooks.json`, `hooks`, `rules` |
+
+Files the CLI itself rewrites on every run cannot be protected this way; they are listed under accepted risks.
+
+**Nested sandboxes.** macOS refuses a second Seatbelt sandbox inside ours. So, only while sandboxed, claude gets `--settings {"sandbox":{"enabled":false}}` and cursor gets `--sandbox disabled`; ours enforces the same limits for the permission. codex's `--sandbox` becomes `danger-full-access` **only on macOS, and only for Read files, Edit files and Run commands**, where codex needs shell commands (it reads files with `cat` and `rg`). With only Answer when tagged it stays `read-only`, so codex refuses every write and macOS every command, as that permission intends; on Linux and Windows codex keeps its own sandbox at the permission's setting as a second layer. Every other CLI flag stays exactly as before.
 
 ## Platforms and fallback
 
@@ -135,7 +149,9 @@ The service keeps the 20 newest refusals per agent (one per kind and target) and
 6. **A broad working folder defeats the read limits.** With your home folder as the working folder, everything in it except the Kurultay config folder is readable once **Read files** is on.
 7. **Keychain (claude, copilot, cursor).** These CLIs need the macOS Keychain to log in, so a turn with **Run commands** can run `/usr/bin/security` and read any Keychain item that already trusts it. The way out is an API-key login for that CLI.
 8. **Localhost on macOS.** Letting an agent run its own servers also lets it connect to every local port on macOS: local databases, Ollama, and the service's control port (which still needs a pairing token, kept in the closed config folder). On Linux the agent has its own network, so the computer's local services are unreachable.
-9. **Untested on Windows**, including whether the service's named pipe is unreachable from inside. **Linux**, an agent with only **Answer when tagged** on whose working folder sits inside your home folder starts in a folder it cannot see; the CI tests cover working folders outside the home folder.
+9. **Files a CLI rewrites itself stay writable.** Only what the CLI never writes on its own can be made read-only (see Host profiles). Left writable, so a prompt-injected turn could change them for your next interactive session: `~/.claude.json` (it also carries Claude's `mcpServers`, but Claude rewrites it on every start), copilot's `~/.copilot/config.json` (trusted folders), cursor's `~/.cursor/cli-config.json` (its command allowlist), opencode's `~/.config/opencode/node_modules` (it installs its plugin there on start) and pi's `auth.json`. Keeping the agent at **Answer when tagged** does not change this: every permission writes the CLI's own files.
+10. **codex on macOS loses its own read-only layer** with **Read files**: its shell commands run under our sandbox alone, which lets them write the turn folder and `~/.codex` (except the read-only files above), not the working folder.
+11. **Untested on Windows**, including whether the service's named pipe is unreachable from inside. **Linux**, an agent with only **Answer when tagged** on whose working folder sits inside your home folder starts in a folder it cannot see; the CI tests cover working folders outside the home folder.
 
 ## Tests
 
@@ -144,11 +160,11 @@ No mocks: the backends in the unit tests are real `{ available, wrap }` objects.
 | File | What |
 |---|---|
 | `packages/mcp/test/sandbox-policy.test.ts` | `policyFor` in every mode, `validateGrants` (protected paths, ancestors, a real symlink into `~/.ssh`, relative paths, bad and local hosts), the prompt line |
-| `packages/mcp/test/sandbox-hosts.test.ts` | every headless CLI has a profile; profile hosts against a telemetry denylist; the nested-sandbox rewrites touch only the sandbox flag |
-| `packages/mcp/test/sandbox-runtime.test.ts` | `startTurn` inactive, fell back and active; the re-entry files; violation parsing, dedupe and capping; install paths |
-| `packages/mcp/test/sandbox/srt.integration.test.ts` | **real srt**: a fixture agent reads and writes outside its folder and into the config folder (refused), reaches an allowed and a denied host, receives a hostile prompt byte for byte, and is stopped by SIGTERM; then the same from a bundle installed by `join` with its `vendor/` |
-| `packages/mcp/test/daemon-sandbox.test.ts` | a real service and relay: a sandboxed turn cannot read the home folder and is told it is sandboxed; a blocked turn tells the council only that it was blocked |
+| `packages/mcp/test/sandbox-hosts.test.ts` | every headless CLI has a profile; profile hosts against a telemetry denylist; every profile's code-running files reach `denyWrite`; the nested-sandbox rewrites touch only the sandbox flag, and codex's only on macOS outside Answer when tagged |
+| `packages/mcp/test/sandbox-runtime.test.ts` | `startTurn` inactive, fell back and active; the re-entry files (a link planted under the violations temp name is not written through); violation parsing, dedupe and capping; install paths; `readOutputFile` refusing symlinks, hard links and FIFOs |
+| `packages/mcp/test/sandbox/srt.integration.test.ts` | **real srt**: a fixture agent reads and writes outside its folder and into the config folder (refused), reaches an allowed and a denied host, receives a hostile prompt byte for byte, and is stopped by SIGTERM; with only Answer when tagged, turns its output file into a link to a secret, plants links under the service's temp names and edits claude's and codex's hooks and config (all refused or untouched); then the same from a bundle installed by `join` with its `vendor/` |
+| `packages/mcp/test/daemon-sandbox.test.ts` | a real service and relay: a sandboxed turn cannot read the home folder and is told it is sandboxed; a blocked turn tells the council only that it was blocked; an output file swapped for a link to a secret never reaches the council |
 | `packages/mcp/test/control.test.ts` | `POST /agents/sandbox` refuses every bad field at once, keeps grants on re-seat |
-| `apps/site/src/app/sandbox.test.ts`, `SandboxSettings.dom.test.tsx` | the app's grant helpers, the no-technology wording rule, the panel's confirm-before-off and Allow buttons |
+| `apps/site/src/app/sandbox.test.ts`, `SandboxSettings.dom.test.tsx`, `SeatDialog.dom.test.tsx` | the app's grant helpers, the no-technology wording rule, the panel's confirm-before-off and Allow buttons, the first permission when this computer cannot sandbox |
 
 They run with `bun run test`. On Linux CI the workflow installs bubblewrap, socat and ripgrep and allows user namespaces; where the sandbox cannot run, the real-sandbox tests skip and say why.

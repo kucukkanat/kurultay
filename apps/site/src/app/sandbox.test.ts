@@ -6,8 +6,10 @@ const on: SandboxConfig = { enabled: true, ...EMPTY_SANDBOX_GRANTS }
 const blocked = (kind: SandboxViolation['kind'], target: string): SandboxViolation => ({ kind, target, at: 1 })
 
 test('the seat checkbox decides the first permission: Edit inside a sandbox, the usual Talk without one', () => {
-  expect(initialMode(true)).toBe('edit')
-  expect(initialMode(false)).toBe(DEFAULT_AGENT_MODE)
+  expect(initialMode(true, { ok: true })).toBe('edit')
+  expect(initialMode(false, { ok: true })).toBe(DEFAULT_AGENT_MODE)
+  // a computer known to be unable to sandbox would run every turn without it (D6): no wider start there
+  expect(initialMode(true, { ok: false, reason: 'missing bwrap' })).toBe(DEFAULT_AGENT_MODE)
   expect(DEFAULT_AGENT_MODE).toBe('talk')
 })
 

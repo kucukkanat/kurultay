@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Kurultay, MemoryStorage, newSecretKey } from '@kurultay/core'
+import { Kurultay, MemoryStorage, newSecretKey, type DaemonSnapshot, type SandboxAvailability } from '@kurultay/core'
 import { startTestRelay } from '@kurultay/core/testing'
 
 setDefaultTimeout(60_000)
@@ -151,4 +151,36 @@ test('pairing, seating from the dialog, then moving, stopping and removing the a
   } finally {
     stop()
   }
+})
+
+test('the seat dialog starts agents with Edit only where the sandbox can really run', async () => {
+  const e = owner
+  if (!e) throw new Error('owner engine did not start')
+  const { render, h } = await import('preact')
+  const { SeatDialog } = await import('./SeatDialog')
+  const { SANDBOX_COPY } = await import('./sandbox')
+  // what a service sends; a seated agent gives the folder picker its folder, so nothing asks the service for one
+  const snap = (sandbox?: SandboxAvailability): DaemonSnapshot => ({
+    version: '0.8.0',
+    pid: 1,
+    paused: false,
+    home,
+    agents: [{ instance: 'codex#1', pubkey: 'ab', name: 'brisk-otter', host: 'codex', workdir: work, mode: 'talk', online: true, running: false, councils: [], groupIds: [] }],
+    hosts: [{ id: 'codex', label: 'Codex', detected: true, seated: true }],
+    sandbox,
+  })
+  // the note shows the very value the dialog seats with
+  const seen = (sandbox?: SandboxAvailability) => {
+    const root = document.body.appendChild(document.createElement('div'))
+    render(h(SeatDialog, { e, onClose: () => {}, snap: snap(sandbox) }), root)
+    const r = { note: byId('seat-start-mode')?.textContent, warned: byId('seat-sandbox-unavailable') !== null, checked: byId<HTMLInputElement>('seat-sandbox')?.checked }
+    render(null, root)
+    root.remove()
+    return r
+  }
+  expect(seen({ ok: true })).toEqual({ note: SANDBOX_COPY.startsEdit, warned: false, checked: true })
+  // a computer known to be unable to sandbox would run every turn without it (D6): warned, and no wider start
+  expect(seen({ ok: false, reason: 'missing bwrap', fix: 'sudo apt-get install bubblewrap' })).toEqual({ note: SANDBOX_COPY.startsTalk, warned: true, checked: true })
+  // an older service says nothing about sandboxes: the same
+  expect(seen(undefined)).toEqual({ note: SANDBOX_COPY.startsTalk, warned: true, checked: true })
 })

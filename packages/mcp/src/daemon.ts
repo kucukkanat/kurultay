@@ -11,7 +11,7 @@ import { applyBoardOps, freshBoard, takeBoardBlocks } from './board-ops'
 import { answerThread, buildPrompt, cleanAnswer, HEADLESS_HOSTS, headlessCommand, type Incoming } from './headless'
 import { detectHosts, HOSTS, type Host } from './install'
 import { serveIpc } from './ipc'
-import { mergeViolations, srtBackend, startTurn, validateGrants } from './sandbox'
+import { mergeViolations, readOutputFile, srtBackend, startTurn, validateGrants } from './sandbox'
 import { createPairing } from './pairing'
 import { installedRuntime, LABEL, seatAgents, SeatError, workdirOf } from './seat'
 import { writePid } from './service'
@@ -192,7 +192,8 @@ class BackgroundAgent {
     try {
       const out = await runCommand(cmd.cmd, cmd.args, this.entry.workdir, cmd.env, (c) => (this.child = c), base.cmd)
       // a ```board block can be long: take it out before the answer is trimmed to message size
-      board = takeBoardBlocks((cmd.outputFile && existsSync(cmd.outputFile) ? readFileSync(cmd.outputFile, 'utf8') : out).replace(/\r/g, ''))
+      // never followed through a link: the agent may write the folder the output file is in
+      board = takeBoardBlocks(((cmd.outputFile ? readOutputFile(cmd.outputFile) : undefined) ?? out).replace(/\r/g, ''))
       answer = cleanAnswer(board.text)
     } catch (err) {
       // held until the sandbox is read: a blocked turn still tells the council it could not finish (D34)
@@ -201,7 +202,7 @@ class BackgroundAgent {
       this.child = undefined
       clearInterval(typing)
       groups.forEach((g) => void e.typing(g, false).catch(() => {}))
-      if (existsSync(outFile)) rmSync(outFile, { force: true })
+      rmSync(outFile, { force: true })
       violations = turn.finish().violations
     }
     this.fellBack = turn.fellBack

@@ -13,6 +13,12 @@ export interface HostProfile {
   readonly readPaths: readonly string[]
   /** config, state, caches and credentials the CLI writes (also readable) */
   readonly writePaths: readonly string[]
+  /**
+   * Inside `writePaths`, what stays read-only: the CLI's own settings, hooks, plugins, MCP servers and instructions. These
+   * run code (or steer the model) the next time the owner uses the CLI outside the sandbox, so writing them would let a
+   * prompt-injected turn escape its sandbox later.
+   */
+  readonly denyWrite?: readonly string[]
   /** model and login endpoints; telemetry and update hosts are left out on purpose (D17) */
   readonly domains: readonly string[]
   /** macOS services the CLI must look up, e.g. the Keychain (`com.apple.SecurityServer`) */
@@ -20,7 +26,13 @@ export interface HostProfile {
   /** environment set only when sandboxed: telemetry and auto-update opt-outs */
   readonly env?: Readonly<Record<string, string>>
   /** adjust the CLI's arguments when its own sandbox cannot nest inside ours; identity otherwise */
-  readonly nested?: (args: readonly string[]) => string[]
+  readonly nested?: (args: readonly string[], on: NestedContext) => string[]
+}
+
+/** What a `nested` rewrite may depend on: whether the CLI's own sandbox can start here, and whether the mode needs it to. */
+export interface NestedContext {
+  readonly mode: AgentMode
+  readonly platform: NodeJS.Platform
 }
 
 /** The resolved rules for one turn. Absolute paths only. */
@@ -153,7 +165,7 @@ export function policyFor(input: PolicyInput): Policy {
     ]),
     denyRead: unique([home, configRoot]),
     allowWrite: open([...own(profile.writePaths), turnDir, ...(reach.write ? [workdir, ...granted(grants.writePaths)] : [])]),
-    denyWrite: [configRoot],
+    denyWrite: unique([configRoot, ...own(profile.denyWrite ?? [])]),
     allowedDomains: unique([...profile.domains, ...grants.allowDomains.map(normaliseDomain).filter((d) => domainProblem(d) === undefined)]),
     allowMachLookup: unique(profile.machLookup ?? []),
     env: { ...profile.env },

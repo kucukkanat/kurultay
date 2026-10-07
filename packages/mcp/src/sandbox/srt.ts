@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -90,10 +91,14 @@ export const srtConfig = (policy: Policy, turnDir: string): SandboxRuntimeConfig
   },
 })
 
-/** Through a temp file and a rename: a rename replaces a planted symlink instead of writing through it. */
+/**
+ * Through a temp file and a rename: a rename replaces a planted symlink instead of writing through it. The turn folder is
+ * the agent's to write, so the temp file is created, never opened: a random name it cannot guess, and `wx` (O_EXCL),
+ * which refuses any existing name, a symlink included, instead of writing through it into a file the owner can write.
+ */
 export function writeViolations(turnDir: string, violations: readonly SandboxViolation[]) {
-  const tmp = join(turnDir, `.${VIOLATIONS_FILE}.${process.pid}`)
-  writeFileSync(tmp, JSON.stringify(violations), { mode: 0o600 })
+  const tmp = join(turnDir, `.${VIOLATIONS_FILE}.${randomUUID()}`)
+  writeFileSync(tmp, JSON.stringify(violations), { mode: 0o600, flag: 'wx' })
   renameSync(tmp, join(turnDir, VIOLATIONS_FILE))
 }
 

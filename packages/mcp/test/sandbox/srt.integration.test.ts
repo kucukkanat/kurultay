@@ -2,11 +2,13 @@
 // and from a built bundle installed by `join` (with its vendor/ helpers). Needs sandbox-exec (macOS) or bwrap, socat and
 // rg (Linux); skipped, with the reason, where the sandbox cannot run.
 import { afterAll, describe, expect, test } from 'bun:test'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { Kurultay, MemoryStorage, newSecretKey, type SandboxViolation } from '@kurultay/core'
 import type { HeadlessCommand } from '../../src/headless'
+import { OutputFileError, readOutputFile } from '../../src/sandbox'
+import { HOST_PROFILES } from '../../src/sandbox/hosts'
 import { policyFor } from '../../src/sandbox/policy'
 import { readViolations, srtBackend } from '../../src/sandbox/srt'
 
@@ -155,6 +157,64 @@ describe.skipIf(!avail.ok)('a sandboxed turn', () => {
     // and takes the agent down with it: the turn still ends, which is what the daemon needs
     if (linux) expect(code).not.toBe(0)
     else expect(code).toBe(7)
+  }, 60_000)
+
+  test('the files the daemon reads back cannot be turned against it, and the CLIs\' code-running config stays read-only', async () => {
+    const l = layout()
+    const victim = join(dirname(l.home), 'victim.json')
+    writeFileSync(victim, '{"keep":true}')
+    const claude = HOST_PROFILES.claude
+    const codex = HOST_PROFILES.codex
+    if (!claude || !codex) throw new Error('missing host profiles')
+    // the real profiles' files in this home, holding what the owner put there
+    const guarded = ['.claude/settings.json', '.claude/hooks/on-stop.sh', '.codex/config.toml'].map((f) => join(l.home, f))
+    for (const f of guarded) {
+      mkdirSync(dirname(f), { recursive: true })
+      writeFileSync(f, 'the owner’s')
+    }
+    // Talk: the narrowest mode still writes the turn folder and the CLIs' own state, which is what the attack needs
+    const policy = policyFor({
+      mode: 'talk',
+      workdir: l.workdir,
+      turnDir: l.turnDir,
+      home: l.home,
+      installPaths: [],
+      profile: { readPaths: [], writePaths: [...claude.writePaths, ...codex.writePaths], denyWrite: [...(claude.denyWrite ?? []), ...(codex.denyWrite ?? [])], domains: [] },
+      grants: { allowDomains: [], readPaths: [], writePaths: [] },
+      configRoot: l.configRoot,
+    })
+    // what a prompt-injected agent tries: its output file and a hard link become the owner's key, a link waits under the
+    // violations temp name of each recent pid (the `__sandbox` process among them), and it edits the CLIs' hooks and config
+    const script = [
+      'T="$1"; H="$2"; S="$3"; V="$4"',
+      'ln -s "$S" "$T/out.txt"',
+      'ln "$S" "$T/hard.txt" 2>/dev/null',
+      // ps is refused inside the sandbox, but pids are handed out in order: the ones just below the agent's own
+      'i=1; while [ $i -le 32 ]; do ln -sf "$V" "$T/.violations.json.$(($$ - i))" 2>/dev/null; i=$((i + 1)); done',
+      'for f in .claude/settings.json .claude/hooks/on-stop.sh .codex/config.toml .claude/settings.local.json .codex/rules/allow.rules; do (echo pwned > "$H/$f") 2>/dev/null; done',
+      'mv "$H/.claude" "$H/.claude-moved" 2>/dev/null',
+      'echo state > "$H/.claude/state.txt"',
+      'echo done',
+    ].join('\n')
+    const wrapped = srtBackend.wrap({ cmd: '/bin/sh', args: ['-c', script, 'sh', l.turnDir, l.home, l.plan.secret, victim] }, policy, l.turnDir)
+    const r = await run(wrapped, l.workdir)
+    expect(r.stdout.trim()).toBe('done')
+    expect(r.code).toBe(0)
+
+    // the output file is a link to the secret: the daemon refuses it instead of posting the key to the council
+    expect(lstatSync(join(l.turnDir, 'out.txt')).isSymbolicLink()).toBe(true)
+    expect(() => readOutputFile(join(l.turnDir, 'out.txt'))).toThrow(OutputFileError)
+    // a hard link is refused by the sandbox or by the daemon; either way the secret never comes back
+    if (existsSync(join(l.turnDir, 'hard.txt'))) expect(() => readOutputFile(join(l.turnDir, 'hard.txt'))).toThrow(OutputFileError)
+    // the unsandboxed `__sandbox` process wrote its report through no planted link
+    expect(readFileSync(victim, 'utf8')).toBe('{"keep":true}')
+    expect(Array.isArray(readViolations(l.turnDir))).toBe(true)
+    // hooks and config are untouched, and none was added beside them; the CLI's own state stays writable
+    for (const f of guarded) expect(readFileSync(f, 'utf8')).toBe('the owner’s')
+    expect(existsSync(join(l.home, '.claude/settings.local.json'))).toBe(false)
+    expect(existsSync(join(l.home, '.codex/rules/allow.rules'))).toBe(false)
+    expect(existsSync(join(l.home, '.claude-moved'))).toBe(false)
+    expect(readFileSync(join(l.home, '.claude/state.txt'), 'utf8')).toBe('state\n')
   }, 60_000)
 
   test('from a built bundle installed by `join`: the helpers come along and the turn runs the same', async () => {

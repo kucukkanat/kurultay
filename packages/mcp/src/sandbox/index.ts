@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { closeSync, mkdtempSync, openSync, readSync, realpathSync, rmSync } from 'node:fs'
+import { closeSync, constants, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, sep } from 'node:path'
 import type { AgentMode, SandboxConfig, SandboxViolation } from '@kurultay/core'
@@ -126,7 +126,7 @@ export async function startTurn(input: TurnInput, deps: TurnDeps = {}): Promise<
     active: true,
     promptNote: promptNoteFor({ workdir, grants: input.config, domains: policy.allowedDomains, mode: input.mode }),
     outDir: turnDir,
-    wrap: (cmd) => backend.wrap(profile.nested ? { ...cmd, args: profile.nested(cmd.args) } : cmd, policy, turnDir),
+    wrap: (cmd) => backend.wrap(profile.nested ? { ...cmd, args: profile.nested(cmd.args, { mode: input.mode, platform: process.platform }) } : cmd, policy, turnDir),
     finish() {
       try {
         return { violations: readViolations(turnDir) }
@@ -134,6 +134,36 @@ export async function startTurn(input: TurnInput, deps: TurnDeps = {}): Promise<
         rmSync(turnDir, { recursive: true, force: true })
       }
     },
+  }
+}
+
+/** The agent replaced its output file with a link (or something else that is not its own plain file). */
+export class OutputFileError extends Error {}
+
+const missing = (e: unknown): boolean => e instanceof Error && 'code' in e && e.code === 'ENOENT'
+
+/**
+ * The CLI's output file, read only when it is a plain file with one name: undefined when it was never written. The file
+ * sits in a folder the sandboxed agent may write, and the daemon reads it unsandboxed, so a symlink or hard link to a
+ * file the sandbox hides (`~/.ssh/id_ed25519`) would carry that file to the council. O_NOFOLLOW and fstat on the open
+ * descriptor judge the very file read, not a name the agent could swap in between; lstat covers Windows, which has no
+ * O_NOFOLLOW. O_NONBLOCK keeps a planted FIFO from hanging the daemon.
+ */
+export function readOutputFile(file: string): string | undefined {
+  let fd: number
+  try {
+    if (lstatSync(file).isSymbolicLink()) throw new OutputFileError(`${file} is a link`)
+    fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
+  } catch (e) {
+    if (missing(e)) return undefined
+    throw e instanceof OutputFileError ? e : new OutputFileError(`cannot open ${file}: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  try {
+    const st = fstatSync(fd)
+    if (!st.isFile() || st.nlink !== 1) throw new OutputFileError(`${file} is not a plain file of its own`)
+    return readFileSync(fd, 'utf8')
+  } finally {
+    closeSync(fd)
   }
 }
 

@@ -43,6 +43,7 @@ export function SeatDialog({ e, groupId, onClose, snap }: { e: Kurultay; groupId
   const [sandbox, setSandbox] = useState(true)
   // an older service sends no `sandbox`: treat that as "can't", so the owner is never told it is safe when it isn't
   const availability = snap.sandbox ?? { ok: false as const, reason: SANDBOX_COPY.seatOld }
+  const startMode = initialMode(sandbox, availability)
   const [ticketId, setTicketId] = useState<string>()
   // an empty folder defaults to the home folder of the computer the service runs on, which only it knows; a folder typed
   // while it was asked for wins
@@ -59,8 +60,7 @@ export function SeatDialog({ e, groupId, onClose, snap }: { e: Kurultay; groupId
       const result = await daemon.seat(ticket, hosts, folder.trim(), sandbox)
       // D20: the first permission travels like any later change (agent_settings). Only a fresh agent gets it: seating
       // again must never widen what the owner already chose
-      const mode = initialMode(sandbox)
-      if (mode !== DEFAULT_AGENT_MODE) for (const a of result.agents) if (!e.state.agentModes?.[a.pubkey]) await e.setAgentMode(a.pubkey, mode).catch((err: Error) => toast(err.message, 'error'))
+      if (startMode !== DEFAULT_AGENT_MODE) for (const a of result.agents) if (!e.state.agentModes?.[a.pubkey]) await e.setAgentMode(a.pubkey, startMode).catch((err: Error) => toast(err.message, 'error'))
       setTicketId(decodeTicket(ticket).id)
       remember(WORKDIR_KEY, folder.trim())
       remember(HOSTS_KEY, hosts)
@@ -123,7 +123,7 @@ export function SeatDialog({ e, groupId, onClose, snap }: { e: Kurultay; groupId
         )}
       </div>
       <p class="muted small-note" data-testid="seat-start-mode">
-        {sandbox ? SANDBOX_COPY.startsEdit : SANDBOX_COPY.startsTalk}
+        {startMode === 'edit' ? SANDBOX_COPY.startsEdit : SANDBOX_COPY.startsTalk}
       </p>
       {seated.length > 0 && (
         <ul class="seat-status" data-testid="seat-progress">

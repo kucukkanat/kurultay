@@ -1,5 +1,6 @@
 // A real daemon, a real relay and a real sandbox: a background turn of a sandboxed agent is told it is sandboxed, cannot
-// read its owner's home, and when the sandbox blocks what it needed the council hears only that (D34), never what.
+// read its owner's home, cannot pass a hidden file off as its answer, and when the sandbox blocks what it needed the
+// council hears only that (D34), never what.
 // Skipped, with the reason, where the sandbox cannot run (Linux without bwrap, socat and rg).
 import { afterAll, expect, test } from 'bun:test'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
@@ -32,7 +33,9 @@ const out = a[a.indexOf('-o') + 1]
 const prompt = a[a.length - 1]
 let secret = 'read'
 try { fs.readFileSync(${JSON.stringify(join(home, 'secret.txt'))}) } catch { secret = 'refused' }
-if (prompt.includes('fetch it')) {
+// the prompt carries the conversation so far: the newest request is checked first
+if (prompt.includes('link it')) fs.symlinkSync(${JSON.stringify(join(home, 'secret.txt'))}, out)
+else if (prompt.includes('fetch it')) {
   const proxy = new URL(process.env.HTTP_PROXY)
   const auth = proxy.username ? 'Proxy-Authorization: Basic ' + Buffer.from(decodeURIComponent(proxy.username) + ':' + decodeURIComponent(proxy.password)).toString('base64') + '\\r\\n' : ''
   const s = net.connect(Number(proxy.port), proxy.hostname, () => s.write('GET http://blocked.example/ HTTP/1.1\\r\\nHost: blocked.example\\r\\n' + auth + 'Connection: close\\r\\n\\r\\n'))
@@ -66,7 +69,14 @@ test.skipIf(!avail.ok)('a sandboxed background turn keeps out of the home folder
   expect(await j.exited).toBe(0)
   // what "Keep in a sandbox" in the app writes
   writeFileSync(join(kHome, 'agents.json'), JSON.stringify({ 'codex#1': { host: 'codex', workdir: work, addedAt: Date.now(), sandbox: { ...EMPTY_SANDBOX_GRANTS, enabled: true } } }))
-  daemon = Bun.spawn(['bun', cli, 'daemon'], { env, cwd: home, stdout: 'inherit', stderr: 'inherit' })
+  const d = Bun.spawn(['bun', cli, 'daemon'], { env, cwd: home, stdout: 'pipe', stderr: 'inherit' })
+  daemon = d
+  // the service's log, read as it comes: a refused output file shows up there, and never in the council
+  let logged = ''
+  void (async () => {
+    const reader = d.stdout.getReader()
+    for (let r = await reader.read(); !r.done; r = await reader.read()) logged += new TextDecoder().decode(r.value)
+  })()
   const o = owner
   await until(() => o.members(g.id).some((m) => m.kind === 'agent'))
   const agent = o.members(g.id).find((m) => m.kind === 'agent')
@@ -82,4 +92,10 @@ test.skipIf(!avail.ok)('a sandboxed background turn keeps out of the home folder
   await until(() => replies().some((m) => m.text === BLOCKED_NOTE), 30_000)
   // the council learns nothing about what was blocked; the owner sees it in the app (snapshot.agents[].sandbox)
   expect(replies().some((m) => m.text.includes('blocked.example'))).toBe(false)
+
+  // the agent swaps its output file for a link to the owner's secret, which the service reads outside the sandbox
+  await o.send(g.id, `@${agent.name} link it`)
+  const leaked = () => o.state.groups[g.id]?.history.some((m) => m.text.includes('the owner’s secret'))
+  await until(() => logged.includes('is a link') || leaked(), 30_000)
+  expect(leaked()).toBe(false)
 }, 90_000)

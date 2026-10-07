@@ -1,4 +1,4 @@
-import { DEFAULT_AGENT_MODE, EMPTY_SANDBOX_GRANTS, type AgentMode, type AgentSandbox, type SandboxConfig, type SandboxGrants, type SandboxViolation } from '@kurultay/core'
+import { DEFAULT_AGENT_MODE, EMPTY_SANDBOX_GRANTS, type AgentMode, type AgentSandbox, type SandboxAvailability, type SandboxConfig, type SandboxGrants, type SandboxViolation } from '@kurultay/core'
 
 /**
  * The DOM-free half of an agent's sandbox in the app: what the seat checkbox implies, the config sent to the background
@@ -27,8 +27,11 @@ export const SANDBOX_COPY = {
 /** How a blocked item is described in the list. */
 export const VIOLATION_LABEL: Record<SandboxViolation['kind'], string> = { read: 'Read', write: 'Change', network: 'Website', other: 'Other' }
 
-/** D20: a sandboxed agent can safely start with Edit; one without a sandbox keeps the cautious default. */
-export const initialMode = (sandboxed: boolean): AgentMode => (sandboxed ? 'edit' : DEFAULT_AGENT_MODE)
+/**
+ * D20: a sandboxed agent can safely start with Edit; one without a sandbox keeps the cautious default. So does one whose
+ * computer is already known to be unable to run the sandbox: every turn would fall back (D6) and edit unsandboxed.
+ */
+export const initialMode = (sandboxed: boolean, availability: SandboxAvailability): AgentMode => (sandboxed && availability.ok ? 'edit' : DEFAULT_AGENT_MODE)
 
 /** The editable part of an agent's sandbox. No `sandbox` means it was seated without one: off (D8). */
 export function configOf(s: AgentSandbox | undefined): SandboxConfig {

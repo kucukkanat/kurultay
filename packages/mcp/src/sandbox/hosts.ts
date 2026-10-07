@@ -19,6 +19,9 @@ const SHARED_SKILLS = '~/.agents/skills'
 /** GitHub Copilot's model API: one host per plan. Listed one by one, because `*.githubcopilot.com` also lets telemetry through. */
 const COPILOT_API = ['api.githubcopilot.com', 'api.individual.githubcopilot.com', 'api.business.githubcopilot.com', 'api.enterprise.githubcopilot.com']
 
+/** Claude Code's files that run code or steer later sessions (settings hold hooks, MCP servers and permissions). */
+const CLAUDE_DENY = ['settings.json', 'settings.local.json', 'hooks', 'plugins', 'skills', 'commands', 'agents', 'output-styles', 'CLAUDE.md'].map((f) => `~/.claude/${f}`)
+
 /** Common providers for the multi-provider CLIs (pi, opencode). Owners add any other one in the agent's allowed websites. */
 const COMMON_PROVIDERS = ['api.anthropic.com', 'api.openai.com', ...COPILOT_API, 'api.github.com']
 
@@ -36,6 +39,9 @@ export const HOST_PROFILES: Readonly<Record<string, HostProfile | undefined>> = 
     // ~/.local/state/claude holds the version lock; ~/Library/Caches/claude-cli-nodejs the per-project cache
     // (~/.cache/claude-cli-nodejs on Linux, unverified)
     writePaths: ['~/.claude', '~/.claude.json', '~/.local/state/claude', '~/Library/Caches/claude-cli-nodejs', '~/.cache/claude-cli-nodejs'],
+    // hooks and plugins run code; skills, commands, agents and CLAUDE.md steer every later session. ~/.claude.json also
+    // carries mcpServers, but Claude rewrites it on every start: it stays writable (docs/sandbox.md, accepted risks)
+    denyWrite: CLAUDE_DENY,
     // only api.anthropic.com was used with a fresh token; the others refresh an expired OAuth login.
     // mcp-proxy.anthropic.com (claude.ai connectors) is the owner's MCP servers (D16): allowed per agent, not here
     domains: ['api.anthropic.com', 'platform.claude.com', 'console.anthropic.com', 'claude.ai'],
@@ -60,11 +66,15 @@ export const HOST_PROFILES: Readonly<Record<string, HostProfile | undefined>> = 
     readPaths: [SHARED_SKILLS, '~/.cache/codex-runtimes'],
     // auth.json (ChatGPT login or API key), sessions, sqlite state and logs all live in CODEX_HOME
     writePaths: ['~/.codex'],
+    // config.toml holds `notify` and MCP server commands; rules/ allows commands without asking
+    denyWrite: ['~/.codex/config.toml', '~/.codex/rules', '~/.codex/plugins', '~/.codex/skills', '~/.codex/prompts', '~/.codex/AGENTS.md'],
     // ab.chatgpt.com (analytics) is refused; codex has no environment opt-out for it, only config.toml
     domains: ['api.openai.com', 'chatgpt.com', 'auth.openai.com'],
-    // `--sandbox read-only|workspace-write` runs commands under sandbox-exec, which cannot nest (macOS refuses with
-    // `forbidden-sandbox-reinit`): every shell command failed. Ours enforces the same limits for the mode, so codex's own goes
-    nested: (args) => replaceAfter(args, '--sandbox', 'danger-full-access'),
+    // On macOS `--sandbox read-only|workspace-write` runs commands under sandbox-exec, which cannot nest
+    // (`forbidden-sandbox-reinit`): every shell command failed. Where the mode needs commands (reading files is `cat` and
+    // `rg` for codex) ours enforces the mode's limits instead. Talk needs none, so it keeps read-only and its commands
+    // fail, as they should; other platforms keep codex's own sandbox as a second layer (docs/sandbox.md, accepted risks)
+    nested: (args, { mode, platform }) => (platform === 'darwin' && mode !== 'talk' && mode !== 'off' ? replaceAfter(args, '--sandbox', 'danger-full-access') : [...args]),
   },
 
   // verified: answered in Talk and Full, shell commands ran in the working folder and were refused outside it.
@@ -73,6 +83,8 @@ export const HOST_PROFILES: Readonly<Record<string, HostProfile | undefined>> = 
     readPaths: [KEYCHAIN_FILES, SHARED_SKILLS],
     // the npm loader unpacks the native CLI into ~/Library/Caches/copilot/pkg on every version (~/.cache/copilot on Linux, unverified)
     writePaths: ['~/.copilot', '~/Library/Caches/copilot', '~/.cache/copilot'],
+    // config.json (trusted folders, written by the CLI itself) stays writable: accepted risk
+    denyWrite: ['~/.copilot/mcp-config.json', '~/.copilot/settings.json', '~/.copilot/permissions-config.json', '~/.copilot/installed-plugins', '~/.copilot/skills', '~/.copilot/agents', '~/.copilot/hooks'],
     // telemetry.enterprise.githubcopilot.com and cafe.github.com are refused, and it answers without them
     domains: [...COPILOT_API, 'api.github.com', 'github.com'],
     // trustd: without it every TLS connection logs "failed to copy trust settings of system certificate"
@@ -86,6 +98,9 @@ export const HOST_PROFILES: Readonly<Record<string, HostProfile | undefined>> = 
     readPaths: [SHARED_SKILLS],
     // ~/.pi/agent holds auth.json, settings, models and sessions
     writePaths: ['~/.pi'],
+    // extensions are TypeScript pi loads; settings.json lists packages it installs and loads; models.json and mcp.json may
+    // name commands. auth.json is refreshed by pi itself
+    denyWrite: ['~/.pi/agent/extensions', '~/.pi/agent/settings.json', '~/.pi/agent/models.json', '~/.pi/agent/mcp.json', '~/.pi/agent/trust.json', '~/.pi/agent/skills', '~/.pi/agent/prompts', '~/.pi/agent/AGENTS.md'],
     // provider-dependent: the common providers; owners add any other one in the allowed websites
     domains: COMMON_PROVIDERS,
     // the version check goes to pi.dev; PI_OFFLINE would also stop it but freezes the model catalogue
@@ -98,6 +113,9 @@ export const HOST_PROFILES: Readonly<Record<string, HostProfile | undefined>> = 
     readPaths: [SHARED_SKILLS],
     // XDG folders on macOS too; it installs its plugins into ~/.config/opencode/node_modules, so that one is written as well
     writePaths: ['~/.config/opencode', '~/.local/share/opencode', '~/.local/state/opencode', '~/.cache/opencode'],
+    // config (MCP servers), plugins and custom tools are code. node_modules stays writable: opencode installs into it on
+    // start (accepted risk)
+    denyWrite: ['opencode.json', 'opencode.jsonc', 'config.json', 'package.json', 'plugin', 'plugins', 'tool', 'tools', 'agent', 'agents', 'command', 'commands', 'AGENTS.md'].map((f) => `~/.config/opencode/${f}`),
     // opencode.ai is its own provider (Zen) and models.dev the model catalogue; the rest is provider-dependent, as pi
     domains: ['opencode.ai', 'models.dev', ...COMMON_PROVIDERS],
     env: { OPENCODE_DISABLE_AUTOUPDATE: 'true', OPENCODE_DISABLE_SHARE: 'true', OPENCODE_DISABLE_LSP_DOWNLOAD: 'true' },
@@ -108,6 +126,8 @@ export const HOST_PROFILES: Readonly<Record<string, HostProfile | undefined>> = 
     // settings.json, oauth_creds.json, google_accounts.json, installation_id and tmp/ (shell history)
     readPaths: [],
     writePaths: ['~/.gemini'],
+    // settings.json holds hooks and MCP servers; extensions are code
+    denyWrite: ['~/.gemini/settings.json', '~/.gemini/extensions', '~/.gemini/commands', '~/.gemini/GEMINI.md'],
     // generativelanguage: API keys; cloudcode-pa: Google login (Code Assist); oauth2: token refresh.
     // play.googleapis.com (Clearcut usage statistics) is refused: there is no environment switch for it
     domains: ['generativelanguage.googleapis.com', 'cloudcode-pa.googleapis.com', 'oauth2.googleapis.com'],
@@ -124,6 +144,8 @@ export const HOST_PROFILES: Readonly<Record<string, HostProfile | undefined>> = 
     readPaths: [KEYCHAIN_FILES],
     // cli-config.json (partly written by the CLI itself) and its state
     writePaths: ['~/.cursor', '~/.config/cursor'],
+    // cli-config.json (its command allowlist) is written by the CLI itself, so it stays writable: accepted risk
+    denyWrite: ['~/.cursor/mcp.json', '~/.cursor/hooks.json', '~/.cursor/hooks', '~/.cursor/rules'],
     // api2: most requests, login refresh included; api3/api4/api5: agent and model traffic per Cursor's network guide
     domains: ['api2.cursor.sh', 'api3.cursor.sh', 'api4.cursor.sh', '*.api5.cursor.sh'],
     // the login is in the Keychain on macOS (CURSOR_API_KEY bypasses it)

@@ -3,12 +3,13 @@
 // (one that cannot run, one that runs commands as they are and reports refusals), not stand-ins for srt. The real srt
 // runs in sandbox/srt.integration.test.ts.
 import { describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { SandboxConfig, SandboxViolation } from '@kurultay/core'
 import type { HeadlessCommand } from '../src/headless'
-import { installPathsFor, installPrefix, mergeViolations, shebangProgram, startTurn, turnBase } from '../src/sandbox'
+import { installPathsFor, installPrefix, mergeViolations, OutputFileError, readOutputFile, shebangProgram, startTurn, turnBase } from '../src/sandbox'
 import { sandboxMain, toViolation, toViolations } from '../src/sandbox/exec'
 import { HOST_PROFILES } from '../src/sandbox/hosts'
 import type { Policy } from '../src/sandbox/policy'
@@ -87,7 +88,7 @@ describe('startTurn', () => {
     if (!w) throw new Error('not wrapped')
     expect(w.turnDir).toBe(turn.outDir)
     // the CLI's own arguments are only adjusted where its inner sandbox cannot nest
-    expect(w.cmd.args).toEqual(HOST_PROFILES.claude?.nested?.(cmd.args) ?? cmd.args)
+    expect(w.cmd.args).toEqual(HOST_PROFILES.claude?.nested?.(cmd.args, { mode: 'edit', platform: process.platform }) ?? cmd.args)
     expect(wrapped).toEqual(w.cmd)
     expect(w.policy.denyRead).toContain(home)
     expect(w.policy.allowWrite).toContain(workdir)
@@ -140,6 +141,18 @@ describe('the re-entry', () => {
     writeViolations(dir, [])
     expect(readFileSync(victim, 'utf8')).toBe('keep me')
     expect(readViolations(dir)).toEqual([])
+  })
+
+  test('the temp file is never opened through a link planted under the name the old code used (its pid)', () => {
+    const dir = tmp('sbx-tmp')
+    const victim = join(tmp('sbx-victim'), 'agents.json')
+    writeFileSync(victim, '{"keep":true}')
+    symlinkSync(victim, join(dir, `.${VIOLATIONS_FILE}.${process.pid}`))
+    writeViolations(dir, [{ kind: 'read', target: '/x', at: 1 }])
+    expect(readFileSync(victim, 'utf8')).toBe('{"keep":true}')
+    expect(readViolations(dir)).toEqual([{ kind: 'read', target: '/x', at: 1 }])
+    // only the planted link and the result are left: the temp file was renamed into place
+    expect(readdirSync(dir).sort()).toEqual([`.${VIOLATIONS_FILE}.${process.pid}`, VIOLATIONS_FILE].sort())
   })
 
   test('`kurultay __sandbox` without a turn folder, or with a broken one, fails loud', async () => {
@@ -253,5 +266,49 @@ describe('this machine', () => {
     expect(out.filesystem.allowRead).toEqual(['/w', helper])
     expect(withSeccompHelper(config, 'darwin', '/x')).toBe(config)
     expect(withSeccompHelper(config, 'linux', undefined)).toBe(config)
+  })
+})
+
+describe('the output file the daemon reads unsandboxed', () => {
+  const secret = () => {
+    const f = join(tmp('sbx-secret'), 'id_ed25519')
+    writeFileSync(f, 'PRIVATE KEY')
+    return f
+  }
+
+  test('a plain file is read; one never written is undefined, not an error', () => {
+    const dir = tmp('sbx-out')
+    expect(readOutputFile(join(dir, 'out.txt'))).toBeUndefined()
+    writeFileSync(join(dir, 'out.txt'), 'the answer')
+    expect(readOutputFile(join(dir, 'out.txt'))).toBe('the answer')
+  })
+
+  test('a symlink to a file the sandbox hides is refused, not followed', () => {
+    const out = join(tmp('sbx-out'), 'out.txt')
+    symlinkSync(secret(), out)
+    expect(() => readOutputFile(out)).toThrow(OutputFileError)
+  })
+
+  test('a dangling symlink is refused too: it is not "never written"', () => {
+    const out = join(tmp('sbx-out'), 'out.txt')
+    symlinkSync('/nonexistent/kurultay', out)
+    expect(() => readOutputFile(out)).toThrow(OutputFileError)
+  })
+
+  test('a hard link to another file is refused', () => {
+    const out = join(tmp('sbx-out'), 'out.txt')
+    const s = secret()
+    try {
+      linkSync(s, out)
+    } catch {
+      return // another file system: the link cannot exist, so neither can the leak
+    }
+    expect(() => readOutputFile(out)).toThrow('not a plain file')
+  })
+
+  test.skipIf(process.platform === 'win32')('a FIFO is refused without hanging', () => {
+    const out = join(tmp('sbx-out'), 'out.txt')
+    expect(spawnSync('mkfifo', [out]).status).toBe(0)
+    expect(() => readOutputFile(out)).toThrow('not a plain file')
   })
 })

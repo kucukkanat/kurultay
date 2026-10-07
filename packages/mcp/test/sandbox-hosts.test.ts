@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import type { AgentMode } from '@kurultay/core'
+import { EMPTY_SANDBOX_GRANTS, type AgentMode } from '@kurultay/core'
 import { HEADLESS_HOSTS, headlessCommand } from '../src/headless'
 import { HOST_PROFILES } from '../src/sandbox/hosts'
-import { domainProblem, expand, pathProblem } from '../src/sandbox/policy'
+import { domainProblem, expand, pathProblem, policyFor } from '../src/sandbox/policy'
 
 
 const MODES: readonly AgentMode[] = ['off', 'talk', 'read', 'edit', 'full']
@@ -37,13 +37,24 @@ describe('host profiles', () => {
   })
 
   test.each(entries)('%s: paths are ~/-relative or absolute, and never home, Kurultay or another tool’s credentials', (_, p) => {
-    for (const path of [...p.readPaths, ...p.writePaths]) {
+    for (const path of [...p.readPaths, ...p.writePaths, ...(p.denyWrite ?? [])]) {
       expect(path.startsWith('~/') || path.startsWith('/')).toBe(true)
       expect(path).not.toContain('..')
       const abs = expand(path, home)
       expect(abs).toBeDefined()
       expect(abs === undefined ? 'unexpanded' : pathProblem(abs, ctx)).toBeUndefined()
     }
+  })
+
+  test.each(entries)('%s: what runs code stays read-only, and each such path sits inside a folder the CLI may write', (host, p) => {
+    // every CLI that keeps config in its writable state has some: hooks, MCP servers, plugins or extensions
+    expect(p.denyWrite?.length).toBeGreaterThan(0)
+    for (const d of p.denyWrite ?? []) expect(p.writePaths.some((w) => d.startsWith(`${w}/`))).toBe(true)
+    const policy = policyFor({ mode: 'full', workdir: '/work', turnDir: '/tmp/t', home, installPaths: [], profile: p, grants: EMPTY_SANDBOX_GRANTS, configRoot: ctx.configRoot })
+    for (const d of p.denyWrite ?? []) expect(policy.denyWrite).toContain(expand(d, home) ?? 'unexpanded')
+    expect(policy.denyWrite).toContain(ctx.configRoot)
+    if (host === 'claude') for (const f of ['settings.json', 'hooks', 'plugins']) expect(policy.denyWrite).toContain(`${home}/.claude/${f}`)
+    if (host === 'codex') expect(policy.denyWrite).toContain(`${home}/.codex/config.toml`)
   })
 
   test.each(entries)('%s: domains are well formed and let no telemetry or update host through', (_, p) => {
@@ -76,6 +87,8 @@ describe('nested', () => {
     expect(nestedHosts.map(([h]) => h).sort()).toEqual(['claude', 'codex', 'cursor'])
   })
 
+  // codex on macOS outside Talk is the one rewrite that depends on where and how it runs; the others always apply
+  const mac = { mode: 'edit', platform: 'darwin' } as const
   for (const [host, p] of nestedHosts) {
     const nested = p.nested
     if (!nested) continue
@@ -84,9 +97,9 @@ describe('nested', () => {
       expect(cmd).not.toBeNull()
       const args = cmd?.args ?? []
       const before = [...args]
-      const out = nested(args)
+      const out = nested(args, mac)
       expect(args).toEqual(before)
-      expect(nested(args)).toEqual(out)
+      expect(nested(args, mac)).toEqual(out)
       expect(out).not.toEqual(args)
       expect(withoutSandboxFlags(out)).toEqual(withoutSandboxFlags(args))
       // the prompt is never touched, even when it looks like a flag
@@ -94,16 +107,26 @@ describe('nested', () => {
     })
   }
 
-  test('codex runs without its own sandbox inside ours, in every mode', () => {
-    for (const mode of MODES) {
-      const args = headlessCommand('codex', mode, 'p', '/work', '/out')?.args ?? []
-      const out = HOST_PROFILES.codex?.nested?.(args) ?? []
-      expect(out[out.indexOf('--sandbox') + 1]).toBe('danger-full-access')
+  const codexSandbox = (mode: AgentMode, platform: NodeJS.Platform) => {
+    const out = HOST_PROFILES.codex?.nested?.(headlessCommand('codex', mode, 'p', '/work', '/out')?.args ?? [], { mode, platform }) ?? []
+    return out[out.indexOf('--sandbox') + 1]
+  }
+
+  test('codex drops its own sandbox only on macOS, where it cannot nest, and only when the mode needs commands', () => {
+    for (const mode of ['read', 'edit', 'full'] as const) expect(codexSandbox(mode, 'darwin')).toBe('danger-full-access')
+    // Talk needs no command: it stays read-only, so codex itself refuses every write (and macOS every command)
+    expect(codexSandbox('talk', 'darwin')).toBe('read-only')
+    // elsewhere codex's own sandbox stays as a second layer, at the mode's own setting
+    for (const platform of ['linux', 'win32'] as const) {
+      expect(codexSandbox('talk', platform)).toBe('read-only')
+      expect(codexSandbox('read', platform)).toBe('read-only')
+      expect(codexSandbox('edit', platform)).toBe('workspace-write')
+      expect(codexSandbox('full', platform)).toBe('workspace-write')
     }
   })
 
   test('claude and cursor switch their own sandbox off', () => {
-    expect(HOST_PROFILES.claude?.nested?.(['-p', 'x']).slice(-2)).toEqual(['--settings', '{"sandbox":{"enabled":false}}'])
-    expect(HOST_PROFILES.cursor?.nested?.(['-p', 'x']).slice(-2)).toEqual(['--sandbox', 'disabled'])
+    expect(HOST_PROFILES.claude?.nested?.(['-p', 'x'], mac).slice(-2)).toEqual(['--settings', '{"sandbox":{"enabled":false}}'])
+    expect(HOST_PROFILES.cursor?.nested?.(['-p', 'x'], mac).slice(-2)).toEqual(['--sandbox', 'disabled'])
   })
 })

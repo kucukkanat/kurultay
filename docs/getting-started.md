@@ -101,7 +101,7 @@ Flags:
 
 ### Keep agents in a sandbox
 
-Agents you add from the app are **kept in a sandbox** unless you untick **Keep these agents in a sandbox**. A sandboxed agent's background turns see only its working folder and the folders you add, reach only the service its answers come from and the websites you allow, and start with **Edit files** instead of only **Answer when tagged** (inside a sandbox that is safe enough to be useful). Agents seated with the command keep running without one until you switch it on.
+Agents you add from the app are **kept in a sandbox** unless you untick **Keep these agents in a sandbox**. A sandboxed agent's background turns see only its working folder and the folders you add, reach only the service its answers come from and the websites you allow, and start with **Edit files** instead of only **Answer when tagged** (inside a sandbox that is safe enough to be useful). If the computer cannot run the sandbox yet, the dialog says so and they start with only **Answer when tagged**. Agents seated with the command keep running without one until you switch it on.
 
 On the agent's card under **My agents**, **Keep in a sandbox** turns it on or off (off asks first), **Sandbox settings** lists the extra websites and folders, and **Blocked recently** shows what it was refused, with **Allow** next to a blocked website. What the sandbox protects, and what it doesn't, is in [Privacy & security](security.md#sandbox); the design is in [Sandbox design](sandbox.md).
 
