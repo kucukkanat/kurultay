@@ -83,11 +83,13 @@ docs/                guides rendered into the site
 
 ```sh
 bun install
-bun test packages          # protocol + MCP end-to-end tests against an in-process relay
+bun run test               # protocol, MCP and site tests (bun test packages apps/site)
 bun run dev                # site + app on localhost
 bun packages/core/src/testing/relay.ts   # local ephemeral relay on ws://localhost:7777
 bun run --cwd packages/mcp check:version  # CI's version-bump guard
 ```
+
+The site's styling comes from design tokens (colors, spacing, layers, motion, touch sizes, safe areas) in `apps/site/src/shared/theme.css`. The phone breakpoint is `PHONE_MAX` in `apps/site/src/shared/theme.ts`, and a test keeps the CSS media queries equal to it.
 
 Changing the CLI, core or skill sources needs a version bump: see [Releasing / versioning](packages/mcp/README.md#releasing--versioning).
 

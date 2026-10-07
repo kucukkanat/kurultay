@@ -856,7 +856,7 @@
   border-radius: 10px;
   box-shadow: var(--shadow);
   min-width: 200px;
-  z-index: 5;
+  z-index: var(--z-float);
 }
 .suggest li {
   padding: 6px 10px;
@@ -949,7 +949,7 @@
   position: absolute;
   right: 0;
   top: 36px;
-  z-index: 6;
+  z-index: var(--z-float-2);
   background: var(--paper);
   border: 1px solid var(--line-2);
   border-radius: 10px;
@@ -1100,7 +1100,7 @@
   height: 10px;
   border-radius: 50%;
   background: var(--ochre);
-  animation: pulse 1.4s ease-in-out infinite;
+  animation: pulse var(--dur-pulse) ease-in-out infinite;
   flex: none;
 }
 @keyframes pulse {
@@ -1162,8 +1162,8 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;
-  background: rgba(30, 20, 12, 0.45);
+  z-index: var(--z-modal);
+  background: var(--scrim);
   display: grid;
   place-items: center;
   padding: 16px;
@@ -1193,7 +1193,7 @@
   position: fixed;
   right: 16px;
   bottom: 16px;
-  z-index: 60;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1206,7 +1206,7 @@
   color: var(--felt);
   font-size: 14px;
   box-shadow: var(--shadow);
-  animation: toast-in 0.2s ease-out;
+  animation: toast-in var(--dur) var(--ease);
 }
 .toast.warn {
   background: var(--ochre-ink);
@@ -1400,7 +1400,7 @@ button.toast:focus-visible {
     top: 0;
     bottom: 0;
     width: min(320px, 90vw);
-    z-index: 30;
+    z-index: var(--z-drawer);
     box-shadow: -20px 0 40px -20px rgba(0, 0, 0, 0.4);
   }
 }
@@ -1413,25 +1413,26 @@ button.toast:focus-visible {
     position: fixed;
     inset: 0 auto 0 0;
     width: min(300px, 86vw);
-    z-index: 40;
+    z-index: var(--z-nav);
     transform: translateX(-102%);
-    transition: transform 0.2s ease;
+    transition: transform var(--dur-slow) var(--ease);
   }
   .nav-open .sidebar {
     transform: none;
+    box-shadow: var(--shadow);
   }
   .nav-open .scrim {
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 35;
-    background: rgba(30, 20, 12, 0.4);
+    z-index: var(--z-scrim);
+    background: var(--scrim);
   }
   .only-mobile {
     display: inline-grid;
   }
   .topbar {
-    padding: 10px 12px;
+    padding: calc(10px + var(--safe-top)) calc(var(--s-3) + var(--safe-right)) 10px calc(var(--s-3) + var(--safe-left));
   }
   .topbar-sub {
     display: none;
@@ -1667,7 +1668,7 @@ code.folder {
   border-radius: var(--r-pill);
   background: var(--line-2);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--dur);
 }
 .toggle::after {
   content: '';
@@ -1679,7 +1680,7 @@ code.folder {
   border-radius: 50%;
   background: var(--paper);
   box-shadow: var(--shadow);
-  transition: transform 0.15s;
+  transition: transform var(--dur);
 }
 .toggle:checked {
   background: var(--ochre);
@@ -1708,14 +1709,14 @@ code.folder {
   border-radius: var(--r-3);
   background: color-mix(in srgb, var(--ochre) 8%, transparent);
   pointer-events: none;
-  z-index: 5;
+  z-index: var(--z-float);
 }
 .drop-hint {
   position: absolute;
   left: 50%;
   top: 45%;
   transform: translate(-50%, -50%);
-  z-index: 6;
+  z-index: var(--z-float-2);
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -2128,5 +2129,132 @@ code.folder {
 @media (max-width: 760px) {
   .board-panel {
     width: 100vw;
+  }
+}
+
+/* ------------------------------------------------------------------ phones and touch screens */
+/* sheets and toasts rise into place */
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--s-3));
+  }
+}
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+/* keep clear of the notch and the home indicator when added to the home screen (viewport-fit=cover) */
+.sidebar {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+}
+.composer {
+  padding-bottom: calc(var(--s-4) + var(--safe-bottom));
+}
+@media (pointer: coarse) {
+  .app-body {
+    overscroll-behavior: none;
+  }
+  .btn,
+  .icon-btn,
+  .side-item {
+    min-height: var(--tap);
+  }
+  .icon-btn {
+    min-width: var(--tap);
+  }
+  .btn:active,
+  .icon-btn:active,
+  .side-item:active {
+    transform: scale(0.97);
+    transition: transform var(--dur-fast) var(--ease);
+  }
+  /* hover backgrounds stick after a tap on touch screens */
+  .side-item:not(.active):hover,
+  .btn.ghost:hover,
+  .msg:hover {
+    background: transparent;
+  }
+  .msg.for-me:hover {
+    background: color-mix(in srgb, var(--ochre) 9%, transparent);
+  }
+  /* 16px stops iOS from zooming the page when a field is focused; :is() outranks the per-field font rules above */
+  .app-body :is(input:not([type='checkbox'], [type='radio'], [type='range']), textarea, select) {
+    font-size: var(--field-touch);
+  }
+}
+/* after the touch rules, so the phone layout wins where both apply */
+@media (max-width: 760px) {
+  /* messages become bubbles: mine on the right without an avatar, everyone else's on the left */
+  .msg {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: var(--s-2);
+    margin: 0;
+    padding: 2px 0;
+    border-radius: 0;
+  }
+  .msg.grouped {
+    padding-top: 0;
+  }
+  .msg.for-me,
+  .msg:hover,
+  .msg.for-me:hover {
+    background: transparent;
+  }
+  .msg-body {
+    justify-self: start;
+    max-width: var(--bubble-max);
+    min-width: 0;
+    background: var(--paper);
+    border: var(--border-w) solid var(--line);
+    border-radius: var(--r-bubble);
+    border-top-left-radius: var(--s-1);
+    padding: var(--s-2) var(--s-3);
+  }
+  /* a message for me keeps its ochre mark as a stripe inside the bubble */
+  .msg.for-me .msg-body {
+    box-shadow: inset 3px 0 0 var(--ochre);
+  }
+  .msg.mine {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .msg.mine .msg-gutter {
+    display: none;
+  }
+  .msg.mine .msg-body {
+    justify-self: end;
+    background: color-mix(in srgb, var(--madder) 14%, var(--paper));
+    border-top-left-radius: var(--r-bubble);
+    border-top-right-radius: var(--s-1);
+  }
+  /* wide code blocks scroll inside the bubble instead of widening the page */
+  .msg-text {
+    overflow-x: auto;
+  }
+  /* dialogs slide up from the bottom edge as sheets */
+  .modal-backdrop {
+    place-items: end stretch;
+    padding: 0;
+  }
+  .modal,
+  .modal.wide {
+    width: 100%;
+    max-height: 90vh;
+    max-height: calc(100dvh - var(--safe-top) - var(--s-5));
+    border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+    padding-bottom: var(--safe-bottom);
+    animation: sheet-in var(--dur-slow) var(--ease);
+  }
+  /* banners drop in from the top, below the notch */
+  .toasts {
+    top: calc(var(--safe-top) + var(--s-2));
+    bottom: auto;
+    left: var(--s-3);
+    right: var(--s-3);
+    max-width: none;
+  }
+  .toast {
+    animation-name: sheet-in;
   }
 }

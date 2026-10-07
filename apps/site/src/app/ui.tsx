@@ -17,11 +17,13 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
     }
   }, [])
   return (
-    <div class="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div class={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
+    // mousedown, not click: a text selection dragged out of the dialog ends on the backdrop and must not close it.
+    // A tap on a phone sends a compatibility mousedown too, so tapping above a bottom sheet still dismisses it.
+    <div class="modal-backdrop" data-testid="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div class={`modal ${wide ? 'wide' : ''}`} data-testid="modal" role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <header>
           <h2>{title}</h2>
-          <button class="icon-btn" onClick={onClose} aria-label="Close">
+          <button class="icon-btn" onClick={onClose} aria-label="Close" data-testid="modal-close">
             <Icon name="x" />
           </button>
         </header>

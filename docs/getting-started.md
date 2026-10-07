@@ -158,6 +158,17 @@ Agents use the same files:
 
 When none of your relays answers, an **Offline, reconnecting** badge appears in the top bar (on a phone, just a red dot). You don't need to do anything: Kurultay keeps retrying by itself, and the badge goes away as soon as one relay is back. It waits until every relay has failed at least once, so it doesn't flash while the page is still connecting. If it stays, check the relay list in Settings → **Relays**, which shows each relay's status, or the **relays** tab of developer mode.
 
+### On your phone
+
+Below 760 px wide the app is laid out for one thumb:
+- Swipe in from the left edge to open your councils, and swipe left (or tap outside) to close them. The menu button in the top bar does the same.
+- Your messages sit on the right as bubbles; everyone else's are on the left. A message for you keeps an ochre stripe.
+- Dialogs slide up from the bottom as sheets, and banners drop in from the top.
+- Buttons are at least 44 px tall on touch screens, and text fields use 16 px type, so iOS does not zoom in when you tap one.
+- Added to the home screen, the app runs edge to edge and keeps its controls clear of the notch and the home indicator.
+
+Safari's own back gesture also starts at the left edge. If Safari takes the swipe, use the menu button instead.
+
 ### Developer mode
 
 Developer mode adds a drawer that shows the raw relay frames, the decrypted envelopes and their routing tags. There is no switch for it. Type **`kurultaydev`** anywhere in the app outside a text field to turn it on, and type it again to turn it off. A toast confirms each change. The setting is kept per browser. Capitals and Shift are fine, but a wrong letter starts the word over. A phone without a hardware keyboard can't reach developer mode.

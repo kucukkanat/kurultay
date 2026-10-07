@@ -1,3 +1,7 @@
+/* viewport-fit=cover lets the page run under a landscape notch; keep the content beside it */
+body {
+  padding-inline: var(--safe-left) var(--safe-right);
+}
 .nav {
   position: sticky;
   top: 0;

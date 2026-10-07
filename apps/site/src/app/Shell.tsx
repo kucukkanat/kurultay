@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { decodeLink, shortKey, type GroupState, type Kurultay, type Message, type Task } from '@kurultay/core'
 import { appUrl, devMode, dismissToast, getBlossom, getRelays, isAttending, markRead, setOpenGroup, markThreadSeen, setBlossomPref, setDevMode, setRelaysPref, threadSeen, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
 import { watchWord } from './devmode'
+import { useDrawerSwipe } from './gestures'
 import { replyTarget, splitThreads } from './threads'
 import { Avatar, CopyField, Icon, Modal, RelayHealthBadge, timeOf } from './ui'
 import { Markdown } from './markdown'
@@ -28,6 +29,7 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
   const [navOpen, setNavOpen] = useState(false)
   const [membersOpen, setMembersOpen] = useState(() => matchMedia('(min-width: 1100px)').matches)
   const dev = devMode()
+  useDrawerSwipe(navOpen, setNavOpen)
 
   // the visible switch is gone: typing the dev word toggles developer mode (see devmode.ts)
   useEffect(
@@ -58,7 +60,7 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
 
   return (
     <div class={`shell ${dev ? 'with-dev' : ''} ${navOpen ? 'nav-open' : ''}`}>
-      <aside class="sidebar" aria-label="Navigation">
+      <aside class="sidebar" aria-label="Navigation" data-testid="sidebar">
         <div class="side-top">
           <a class="brand" href="../" title="Kurultay home">
             <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -101,7 +103,7 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
           </div>
         </div>
       </aside>
-      <div class="scrim" onClick={() => setNavOpen(false)} />
+      <div class="scrim" data-testid="nav-scrim" onClick={() => setNavOpen(false)} />
 
       <main class="main">
         {view.kind === 'group' && e.state.groups[view.id] ? (
@@ -181,7 +183,7 @@ function GroupList({ e, title, groups, view, go, empty }: { e: Kurultay; title: 
 function TopBar({ title, sub, openNav, children }: { title: string; sub?: string; openNav: () => void; children?: preact.ComponentChildren }) {
   return (
     <header class="topbar">
-      <button class="icon-btn only-mobile" onClick={openNav} aria-label="Open navigation">
+      <button class="icon-btn only-mobile" onClick={openNav} aria-label="Open navigation" data-testid="nav-open">
         <Icon name="menu" />
       </button>
       <div class="topbar-title">
@@ -350,7 +352,7 @@ export function MessageRow({ e, g, m, prev, names, replies, onThread, inThread }
   }
 
   return (
-    <div class={`msg ${grouped ? 'grouped' : ''} ${mine ? 'mine' : ''} ${forMe ? 'for-me' : ''}`}>
+    <div class={`msg ${grouped ? 'grouped' : ''} ${mine ? 'mine' : ''} ${forMe ? 'for-me' : ''}`} data-testid="message" data-mine={mine}>
       <div class="msg-gutter">{!grouped && <Avatar name={name} kind={kind} picture={who?.card?.avatar} />}</div>
       <div class="msg-body">
         {!grouped && (
@@ -652,6 +654,7 @@ function Composer({ e, g, pending, thread }: { e: Kurultay; g: GroupState; pendi
         )}
         <textarea
           ref={ta}
+          data-testid="composer-input"
           rows={1}
           value={text}
           onPaste={(ev) => {

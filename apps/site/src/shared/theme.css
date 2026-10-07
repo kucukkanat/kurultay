@@ -32,10 +32,36 @@
   --s-1: 4px;
   --s-2: 8px;
   --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
   --border-w: 1px;
   /* the thread side panel, and the layer it takes as a drawer on narrow screens */
   --thread-w: 380px;
+  /* layers, bottom to top: popovers, side drawers (members, thread, board), the phone nav scrim and drawer, dialogs, toasts */
+  --z-float: 5;
+  --z-float-2: 6;
   --z-drawer: 30;
+  --z-scrim: 35;
+  --z-nav: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+  --scrim: rgba(30, 20, 12, 0.45);
+  /* motion; the reduced-motion rule below shortens all of it */
+  --dur-fast: 120ms;
+  --dur: 160ms;
+  --dur-slow: 240ms;
+  --dur-pulse: 1.4s;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* phones (PHONE_MAX in theme.ts is the breakpoint): finger-sized targets, 16px fields so iOS does not zoom, bubbles, sheets */
+  --tap: 44px;
+  --field-touch: 16px;
+  --bubble-max: 86%;
+  --r-bubble: var(--r-3);
+  --r-sheet: 22px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
   /* the council board beside the chat, and the layer it takes full screen */
   --board-w: min(640px, 50vw);
   --board-drawer-w: 640px;

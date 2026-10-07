@@ -1,3 +1,8 @@
+/** The phone breakpoint. CSS cannot read a custom property inside @media, so this is the source of truth and a test keeps
+ * every `@media (max-width: …)` phone rule in app.css equal to it. */
+export const PHONE_MAX = 760
+export const PHONE_QUERY = `(max-width: ${PHONE_MAX}px)`
+
 export type ThemePref = 'auto' | 'light' | 'dark'
 const KEY = 'kurultay:theme'
 
