@@ -71,7 +71,7 @@ export interface ChartColors {
 /** Draws a checked chart to an SVG string. vega and vega-lite load only now, and only after the spec passed the check. */
 export async function chartSvg(code: string, colors: ChartColors): Promise<string> {
   const spec = checkChartSpec(code)
-  const [vega, vegaLite] = await Promise.all([import('vega'), import('vega-lite')])
+  const [vega, vegaLite, { expressionInterpreter }] = await Promise.all([import('vega'), import('vega-lite'), import('vega-interpreter')])
   const { ink, grid } = colors
   const config = {
     background: 'transparent',
@@ -85,7 +85,10 @@ export async function chartSvg(code: string, colors: ChartColors): Promise<strin
   // a second line of defence behind checkChartSpec: the loader refuses every request
   const refuse = () => Promise.reject(new RichError('url', 'Charts cannot load anything from outside'))
   const loader = { ...vega.loader(), load: refuse, sanitize: refuse, http: refuse, file: refuse }
-  const view = new vega.View(vega.parse(compiled.spec), { renderer: 'none', loader, logLevel: vega.Error })
+  // the spec's expressions (calculate, filter, signals) are interpreted, never compiled with Function(): vega's default codegen
+  // would run a stranger's code in this origin, which holds the user's keys, as soon as the message is shown
+  const runtime = vega.parse(compiled.spec, undefined, { ast: true })
+  const view = new vega.View(runtime, { expr: expressionInterpreter, renderer: 'none', loader, logLevel: vega.Error })
   try {
     await view.runAsync()
     return await view.toSVG()
@@ -102,8 +105,9 @@ export function checkSvg(text: string): string {
 }
 
 /**
- * An artifact runs in a sandboxed frame with no network, no storage, no navigation and no way to reach the page around it.
- * The policy is part of the document itself, ahead of anything the author wrote.
+ * An artifact runs in a sandboxed frame with no direct network requests, no storage, no top-level navigation and no way to reach
+ * the page around it. The policy is part of the document itself, ahead of anything the author wrote. It is not a full seal: a
+ * script can still navigate its own frame away (leaving the policy behind), so whatever is typed into an artifact can reach its author.
  */
 export const ARTIFACT_CSP = [
   "default-src 'none'",

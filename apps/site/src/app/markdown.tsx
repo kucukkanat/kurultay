@@ -70,7 +70,10 @@ function inline(tokens: Token[] | undefined, o: Opts): ComponentChildren {
   })
 }
 
-/** A picture linked from a message: https only, no referrer, no cookies. If it will not load, its description and a link remain. */
+/**
+ * A picture linked from a message: https only, no referrer. Deliberately no crossorigin: that would make every load a CORS
+ * request, and most image hosts do not answer one. If it will not load, its description and a link remain.
+ */
 function MdImage({ href, alt, title }: { href: string; alt: string; title?: string }) {
   const [failed, setFailed] = useState(false)
   const src = safeImageSrc(href)
@@ -83,7 +86,7 @@ function MdImage({ href, alt, title }: { href: string; alt: string; title?: stri
     ) : (
       <span>{alt}</span>
     )
-  return <img class="md-img" src={src} alt={alt} title={title} loading="lazy" decoding="async" referrerpolicy="no-referrer" crossorigin="anonymous" onError={() => setFailed(true)} />
+  return <img class="md-img" src={src} alt={alt} title={title} loading="lazy" decoding="async" referrerpolicy="no-referrer" onError={() => setFailed(true)} />
 }
 
 function CodeBlock({ code, lang }: { code: string; lang: string }) {

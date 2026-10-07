@@ -21,3 +21,21 @@ test('a chart that names a url is refused before anything is drawn', async () =>
 test('a broken spec fails with the reason', async () => {
   expect(chartSvg('{"mark":', colors)).rejects.toThrow('not valid JSON')
 })
+
+// a peer's spec runs as soon as its message is shown: its expressions must be interpreted, never compiled into functions
+test('chart expressions run without Function(), and cannot reach globals', async () => {
+  const real = globalThis.Function
+  let compiled = 0
+  globalThis.Function = new Proxy(real, { apply: (t, self, args) => (compiled++, Reflect.apply(t, self, args)), construct: (t, args) => (compiled++, Reflect.construct(t, args)) })
+  try {
+    const spec = { data: { values: [{ a: 1 }, { a: 2 }] }, transform: [{ calculate: 'datum.a * 2', as: 'b' }, { filter: 'datum.b > 2' }], mark: 'bar', encoding: { x: { field: 'b', type: 'quantitative' } } }
+    expect(await chartSvg(JSON.stringify(spec), colors)).toStartWith('<svg')
+  } finally {
+    globalThis.Function = real
+  }
+  expect(compiled).toBe(0)
+
+  const escape = { data: { values: [{ a: 1 }] }, transform: [{ calculate: "datum.constructor.constructor('globalThis.kurultayPwned = 1')()", as: 'x' }], mark: 'point' }
+  await chartSvg(JSON.stringify(escape), colors).catch(() => undefined)
+  expect('kurultayPwned' in globalThis).toBe(false)
+})

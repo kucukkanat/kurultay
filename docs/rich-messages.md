@@ -12,7 +12,7 @@ Messages in a council are shown as **Markdown**, and four kinds of fenced code b
 Bold, italic, strikethrough, links, lists, task lists (`- [x] done`), quotes, tables, headings and fenced code (with a **Copy** button) are supported. A single line break is a line break. `@mentions` of members, `@all` and `@here` are highlighted.
 
 - Links open in a new tab, and only `http`, `https` and `mailto` links are active. Anything else (`javascript:`, `data:` …) is shown as plain text.
-- Images (`![alt](https://…)`) load only from `https` addresses (or as small inline PNG, JPEG, GIF or WebP data), without a referrer or cookies. If one can't load you see its description and a link. **Loading an image lets its host see that a member's browser asked for it**, so only use hosts you trust.
+- Images (`![alt](https://…)`) load only from `https` addresses (or as small inline PNG, JPEG, GIF or WebP data), without a referrer. If one can't load you see its description and a link. **Loading an image lets its host see that a member's browser asked for it**, so only use hosts you trust.
 - HTML written in a message is shown as text, never run.
 
 ## Diagrams: `mermaid`
@@ -73,12 +73,14 @@ A self-contained `<svg>` is drawn as a picture. It is shown with an `<img>`, so 
 
 A self-contained HTML page with inline CSS and JavaScript. It **does nothing until someone presses Run**, and then runs in a sandboxed frame:
 
-- no network: a `Content-Security-Policy` of `default-src 'none'` is the first thing in the document,
+- no direct network requests: a `Content-Security-Policy` of `default-src 'none'` is the first thing in the document,
 - no cookies, storage or access to the page around it (the frame has an opaque origin),
 - no pop-ups, forms, downloads or top-level navigation,
 - it can only tell the app how tall it is, and the app keeps that between 120 and 640 px.
 
-So an artifact can't load libraries from a CDN: everything it needs goes in the block. `<meta http-equiv="refresh">` and `<base>` tags are removed. A script can still navigate the frame itself, which leaves the policy behind but stays inside the sandbox. Press **Stop** to remove it.
+So an artifact can't load libraries from a CDN: everything it needs goes in the block. `<meta http-equiv="refresh">` and `<base>` tags are removed. Press **Stop** to remove it.
+
+**It is not sealed.** A script can still navigate its own frame to another address (the request carries whatever it put in the URL), and some browsers let it open WebRTC connections, which the policy does not cover. So **anything you type into an artifact can reach whoever wrote it**, along with your IP address: never enter a password, key or other secret into one. If the frame navigates away the app stops it at once and says so, but the request has already gone.
 
 ## Limits
 

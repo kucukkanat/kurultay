@@ -23,6 +23,7 @@
         "react": "19.3.0",
         "react-dom": "19.3.0",
         "vega": "6.4.0",
+        "vega-interpreter": "2.3.2",
         "vega-lite": "6.4.3",
       },
       "devDependencies": {
@@ -44,7 +45,7 @@
     },
     "packages/mcp": {
       "name": "kurultay",
-      "version": "0.9.0",
+      "version": "0.11.0",
       "bin": {
         "kurultay": "dist/cli.js",
       },
@@ -994,6 +995,8 @@
     "vega-geo": ["vega-geo@5.1.3", "", { "dependencies": { "d3-array": "^3.2.4", "d3-color": "^3.1.0", "d3-geo": "^3.1.1", "vega-canvas": "^2.0.0", "vega-dataflow": "^6.1.3", "vega-projection": "^2.1.3", "vega-statistics": "^2.0.0", "vega-util": "^2.1.3" } }, "sha512-UfTVPV+O+7elFyUsw8FLjiDOJkF0VZanC5tHLaSSue5h+xLzG6SDKQ7xEBIQSaTBE8nLSBtHm45Qve0SFjILVQ=="],
 
     "vega-hierarchy": ["vega-hierarchy@5.1.3", "", { "dependencies": { "d3-hierarchy": "^3.1.2", "vega-dataflow": "^6.1.3", "vega-util": "^2.1.3" } }, "sha512-bDWDNGuUA4WcOD5CMh9Mahs3CwKxSU3W1XAnDGCpAwfJVoWp7vlVMt1paoTczPFTXtXGxIa3vJu94xWGmI3/og=="],
+
+    "vega-interpreter": ["vega-interpreter@2.3.2", "", { "dependencies": { "vega-util": "^2.1.3" } }, "sha512-JDAoi3taFcCDLujZG84TNNUXdkAZ5WsSHssx8lWVYaxb9Slsjk7v7PtRIYXpSlUwLaKGRBqoJ9KDs36Z0eMEIw=="],
 
     "vega-label": ["vega-label@2.1.3", "", { "dependencies": { "vega-canvas": "^2.0.0", "vega-dataflow": "^6.1.3", "vega-scenegraph": "^5.3.0", "vega-util": "^2.1.3" } }, "sha512-UcaGgrVr2Gb0sUj4j3L5tZuL6GOn7tyauYsfXsS0hURoIbHCfQI4SnRq89vl5ub5DL1SEWaJTKag4GdAm1hcGw=="],
 

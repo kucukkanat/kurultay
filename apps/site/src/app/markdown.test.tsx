@@ -31,6 +31,13 @@ test('unsafe links become plain spans, safe ones open in a new tab', () => {
   expect(out).not.toContain('<img')
 })
 
+test('https images load without a referrer and without a CORS request most hosts would refuse', () => {
+  const out = html('![chart](https://example.com/a.png)')
+  expect(out).toContain('<img class="md-img" src="https://example.com/a.png"')
+  expect(out).toContain('referrerpolicy="no-referrer"')
+  expect(out).not.toContain('crossorigin')
+})
+
 test('tables, task lists, mentions, headings and line breaks', () => {
   const out = html('# Title\n| a | b |\n|:-|-:|\n| 1 | 2 |\n\n- [x] done\n- [ ] todo\n\n3. three\n\n@ada and @nobody, @all\nnext line ~~gone~~')
   expect(out).toContain('<h3 class="md-h">Title</h3>')

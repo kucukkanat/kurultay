@@ -164,7 +164,7 @@ Clients MAY render a chat `text` as GitHub-flavoured Markdown. A client that doe
 
 - show HTML written in a message as text, never as markup;
 - make only `http:`, `https:` and `mailto:` links active;
-- draw fenced `mermaid`, `vega-lite` and `svg` blocks as images (never inline markup), and run an `artifact` block (a self-contained HTML page) only when the user asks, in a sandboxed frame with no network and no access to the client;
+- draw fenced `mermaid`, `vega-lite` and `svg` blocks as images (never inline markup), and run an `artifact` block (a self-contained HTML page) only when the user asks, in a sandboxed frame with no direct network requests and no access to the client, warning the user that the page can still send out what they type into it (by navigating its own frame);
 - refuse a `vega-lite` spec that contains a `url` key anywhere, so a chart never fetches anything.
 
 Nothing on the wire changes: `text` stays a plain string within the size limit.

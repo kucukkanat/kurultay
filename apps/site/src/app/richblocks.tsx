@@ -122,11 +122,14 @@ const SvgBlock: CodeBlockRenderer = ({ code }) => {
 }
 
 /**
- * A small interactive page. It does nothing until the reader presses Run, then runs in a frame whose policy allows no network,
- * no storage, no navigation and no contact with this page (see rich.ts). The only thing it can tell us is its height.
+ * A small interactive page. It does nothing until the reader presses Run, then runs in a frame whose policy allows no direct
+ * network requests, no storage and no contact with this page (see rich.ts). The only thing it can tell us is its height.
+ * It can still navigate its own frame, carrying data out in the URL; when it does (a second load), the frame is removed.
  */
 function ArtifactRunner({ html, title, onStop }: { html: string; title: string; onStop: () => void }) {
   const [height, setHeight] = useState(clampHeight(undefined))
+  const [left, setLeft] = useState(false)
+  const loads = useRef(0)
   const frame = useRef<HTMLIFrameElement>(null)
   useEffect(() => {
     const on = (ev: MessageEvent) => {
@@ -137,12 +140,18 @@ function ArtifactRunner({ html, title, onStop }: { html: string; title: string; 
   }, [])
   return (
     <>
-      <iframe ref={frame} class="md-artifact" title={title} sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc={artifactDocument(html)} style={{ height: `${height}px` }} data-testid="artifact-frame" />
+      {left ? (
+        <p class="error" data-testid="artifact-left">
+          This page tried to load another address and was stopped. Anything typed into it may have been sent to its author.
+        </p>
+      ) : (
+        <iframe ref={frame} class="md-artifact" title={title} sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc={artifactDocument(html)} style={{ height: `${height}px` }} onLoad={() => ++loads.current > 1 && setLeft(true)} data-testid="artifact-frame" />
+      )}
       <div class="row">
         <button class="btn small" type="button" onClick={onStop} data-testid="artifact-stop">
           Stop
         </button>
-        <span class="member-meta">Runs on its own: no network, no access to this page.</span>
+        <span class="member-meta">Runs on its own, with no access to this page. It can still send what you type into it to its author: never enter secrets.</span>
       </div>
     </>
   )
