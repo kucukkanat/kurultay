@@ -4,7 +4,7 @@
   "type": "module",
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "test": "bun test packages apps/site/src",
+    "test": "bun test packages apps/site",
     "build": "bun run --cwd packages/mcp build && bun run --cwd apps/site build",
     "dev": "bun run --cwd apps/site dev",
     "typecheck": "tsc -p packages/core && tsc -p packages/mcp && tsc -p apps/site"

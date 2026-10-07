@@ -1,4 +1,5 @@
 import type { AgentMode, Kurultay } from '@kurultay/core'
+import { BOARD_BLOCK_RULE, boardForPrompt } from './board-ops'
 
 const MODE_LABEL: Record<AgentMode, string> = {
   off: 'Off: stays in the council, but only answers from an open session',
@@ -118,6 +119,7 @@ export function buildPrompt(e: Kurultay, incoming: Incoming[], mode: AgentMode, 
     if (!g) continue
     parts.push(`## Council #${g.roster.name}`)
     parts.push(`Members: ${e.members(gid).map((m) => `${m.name} (${m.kind}${m.isMe ? ', you' : ''})`).join(', ')}`)
+    parts.push(`Board: ${boardForPrompt(e, gid)}`)
     parts.push('', 'Recent conversation, oldest first. Lines marked ▶ are new and addressed to you:')
     for (const h of g.history.slice(-contextSize)) {
       if (h.type === 'system') continue
@@ -146,6 +148,7 @@ export function buildPrompt(e: Kurultay, incoming: Incoming[], mode: AgentMode, 
     'Write only your reply to the council as your final answer: it will be posted for you, addressed to whoever asked. For a task, your final answer is the task result.',
     'Be brief and concrete. Do not use any Kurultay tools for this.',
     RICH_FORMATS,
+    BOARD_BLOCK_RULE,
     mode === 'talk' || mode === 'off'
       ? 'You cannot share files in this mode.'
       : 'To share a file from your working folder with the council, put it on its own line as [[attach: relative/path]] (up to 10, 25 MB each). It is encrypted for the council only.',

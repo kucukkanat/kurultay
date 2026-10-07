@@ -10,6 +10,9 @@ const tmp = mkdtempSync(join(tmpdir(), 'kurultay-selfmanage-'))
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
 const BUILT = '2026-10-01T12:00:00.000Z'
+// read, not written in: every CLI change bumps the version, and these tests must not need editing for it
+const VERSION: string = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8')).version
+const V = VERSION.replaceAll('.', '\\.')
 
 interface Stamp {
   version: string
@@ -69,9 +72,9 @@ beforeEach(() => {
 
 test('--version shows the version, short commit and build time; a source run shows dev', async () => {
   const { out } = await run(['--version'])
-  expect(out).toMatch(/^0\.8\.0 \(aaaaaaa\) built 2026-10-0\d \d\d:\d\d \(\d+ \w+ ago\)\n$/)
+  expect(out).toMatch(new RegExp(`^${V} \\(aaaaaaa\\) built 2026-10-0\\d \\d\\d:\\d\\d \\(\\d+ \\w+ ago\\)\\n$`))
   const src = Bun.spawnSync(['bun', 'src/cli.ts', 'version'], { cwd: pkg })
-  expect(src.stdout.toString().trim()).toMatch(/^0\.8\.0 \(dev\)$/)
+  expect(src.stdout.toString().trim()).toBe(`${VERSION} (dev)`)
 })
 
 test('update --check: up to date, same code, new version, new build without a bump', async () => {
@@ -80,7 +83,7 @@ test('update --check: up to date, same code, new version, new build without a bu
   published.info = b.info // same sources under another commit
   expect(await run(['update', '--check'])).toMatchObject({ code: 0, out: expect.stringContaining('same code') })
   published.info = { ...b.info, version: '9.0.0', hash: 'src1:other' }
-  expect(await run(['update', '--check'])).toMatchObject({ code: 2, out: expect.stringContaining('0.8.0 → 9.0.0') })
+  expect(await run(['update', '--check'])).toMatchObject({ code: 2, out: expect.stringContaining(`${VERSION} → 9.0.0`) })
   published.info = { ...b.info, hash: 'src1:other' }
   expect(await run(['update', '--check'])).toMatchObject({ code: 2, out: expect.stringContaining('not bumped') })
   expect(readFileSync(runtime)).toEqual(readFileSync(a.cli))

@@ -1,3 +1,4 @@
+import type { BoardElement } from './board'
 import type { FileRef, UploadRecord } from './files'
 import type { Event as NostrEvent } from 'nostr-tools/pure'
 
@@ -114,6 +115,8 @@ export interface GroupState {
   tasks: Record<string, Task>
   history: Message[]
   joinedAt: number
+  /** the council board: its Excalidraw elements by id, tombstones included (see board.ts) */
+  board?: Record<string, BoardElement>
 }
 
 export interface PendingJoin {
@@ -273,6 +276,12 @@ export type Envelope =
   | { type: 'presence'; status: 'online' | 'offline'; card?: Card; attestation?: NostrEvent }
   | { type: 'state'; roster: Roster; epoch: number }
   | { type: 'leave' }
+  /** board elements that changed (with `full`: a whole board answering board_req), as Excalidraw JSON; sanitized on arrival */
+  | { type: 'board'; els: unknown[]; full?: boolean }
+  /** a member who just opened the board asks whoever has it to send it */
+  | { type: 'board_req' }
+  /** where a member's pointer is on the board, for live cursors; never stored */
+  | { type: 'board_ptr'; x: number; y: number }
   // pairwise inbox
   | { type: 'join_req'; reqId: string; inviteId: string; secret: string; name: string; kind: PeerKind; inbox: string; owner?: string; attestation?: NostrEvent; card?: Card }
   | { type: 'key'; groupId: string; reqId?: string; relays: string[]; epoch: number; key: string; roster: Roster }

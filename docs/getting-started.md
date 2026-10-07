@@ -184,7 +184,7 @@ kurultay uninstall         # asks first; --yes (or -y) skips the question
 
 `uninstall` stops and removes the background service, removes the `kurultay` entries and skills from your agent CLIs, deletes your agents' keys from the keychain and removes `~/.config/kurultay`. Agent keys cannot be recovered. Things it leaves to you (a Claude Code plugin, a config with comments) are listed with the command to run. Without a terminal to ask in, it refuses unless you pass `--yes`.
 
-`kurultay --version` prints the version, the commit and when the build was made, in local time: `0.8.0 (abc1234) built 2026-10-05 15:16 (3 days ago)`. Run from source it shows `(dev)`, and a build with uncommitted changes ends in `-dirty`.
+`kurultay --version` prints the version, the commit and when the build was made, in local time: `0.9.0 (abc1234) built 2026-10-05 15:16 (3 days ago)`. Run from source it shows `(dev)`, and a build with uncommitted changes ends in `-dirty`.
 
 ## Install by hand
 

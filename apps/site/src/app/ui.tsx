@@ -55,6 +55,9 @@ export function CopyField({ value, label, multiline }: { value: string; label?: 
 
 const PATHS: Record<string, string> = {
   x: 'M6 6l12 12M18 6L6 18',
+  board: 'M4 4h16v12H4zM8 20l4-4 4 4M7.5 12.5l3-3 2 2 4-4',
+  expand: 'M15 4h5v5M9 20H4v-5M20 4l-6 6M4 20l6-6',
+  collapse: 'M14 10l6-6M10 14l-6 6M14 5v5h5M10 19v-5H5',
   plus: 'M12 5v14M5 12h14',
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   users: 'M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M21 19v-1a4 4 0 0 0-3-3.9M15.5 3.2a3.5 3.5 0 0 1 0 6.6',

@@ -36,6 +36,10 @@
   /* the thread side panel, and the layer it takes as a drawer on narrow screens */
   --thread-w: 380px;
   --z-drawer: 30;
+  /* the council board beside the chat, and the layer it takes full screen */
+  --board-w: min(640px, 50vw);
+  --board-drawer-w: 640px;
+  --z-board-full: 40;
   --avatar-picker-gap: 14px;
   --toggle-w: 40px;
   --toggle-h: 24px;

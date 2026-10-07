@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import preact from '@preact/preset-vite'
 import { readdirSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { excalidrawAssets } from './vite-excalidraw'
 
 const root = __dirname
 const docsDir = resolve(root, 'docs')
@@ -19,7 +20,8 @@ const pinNpx = {
 
 export default defineConfig({
   base: '/kurultay/',
-  plugins: [preact(), pinNpx],
+  // the board runs Excalidraw on real React in its own root (src/app/board), so `react` must stay React, not preact/compat
+  plugins: [preact({ reactAliasesEnabled: false }), excalidrawAssets(), pinNpx],
   build: {
     target: 'es2022',
     rollupOptions: {

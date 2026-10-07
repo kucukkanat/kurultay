@@ -7,6 +7,7 @@ import { extractAttachments, inboxDir, saveFiles, uploadPaths } from './attach'
 import { defaultOrigins, startControl, type Control, type ControlApi } from './control'
 import { blossomFromEnv, configRoot, displayName, FileStorage } from './instance'
 import { deleteKey, loadOrCreateKey } from './keystore'
+import { applyBoardOps, freshBoard, takeBoardBlocks } from './board-ops'
 import { answerThread, buildPrompt, cleanAnswer, HEADLESS_HOSTS, headlessCommand, type Incoming } from './headless'
 import { detectHosts, HOSTS, type Host } from './install'
 import { serveIpc } from './ipc'
@@ -170,7 +171,8 @@ class BackgroundAgent {
     const groups = [...new Set(incoming.map((m) => m.groupId))]
     const tasks = incoming.filter((m) => m.type === 'task' && m.taskId)
     for (const m of tasks) await e.updateTask(m.groupId, m.taskId!, 'working').catch(() => {})
-    const turn = await startTurn({ host: this.entry.host, mode, workdir: this.entry.workdir, config: this.entry.sandbox })
+    // the prompt lists each council's board; one this agent has never seen is asked for while the sandbox starts
+    const [turn] = await Promise.all([startTurn({ host: this.entry.host, mode, workdir: this.entry.workdir, config: this.entry.sandbox }), ...groups.map((g) => freshBoard(e, g))])
     // inside the sandbox the CLI may only write its turn folder, so its output file goes there
     const outFile = join(turn.outDir, `kurultay-${process.pid}-${Date.now()}.txt`)
     const prompt = buildPrompt(e, incoming, mode, this.entry.workdir, undefined, turn.promptNote)
@@ -186,9 +188,12 @@ class BackgroundAgent {
     let answer = ''
     let failure: Error | undefined
     let violations: SandboxViolation[] = []
+    let board: ReturnType<typeof takeBoardBlocks> = { text: '', ops: [], errors: [] }
     try {
       const out = await runCommand(cmd.cmd, cmd.args, this.entry.workdir, cmd.env, (c) => (this.child = c), base.cmd)
-      answer = cleanAnswer(cmd.outputFile && existsSync(cmd.outputFile) ? readFileSync(cmd.outputFile, 'utf8') : out)
+      // a ```board block can be long: take it out before the answer is trimmed to message size
+      board = takeBoardBlocks((cmd.outputFile && existsSync(cmd.outputFile) ? readFileSync(cmd.outputFile, 'utf8') : out).replace(/\r/g, ''))
+      answer = cleanAnswer(board.text)
     } catch (err) {
       // held until the sandbox is read: a blocked turn still tells the council it could not finish (D34)
       failure = err instanceof Error ? err : new Error(String(err))
@@ -204,6 +209,10 @@ class BackgroundAgent {
     // a rolling list, not the last turn's: a clean turn must not take away the Allow buttons for what an earlier one hit
     if (turn.active) this.lastViolations = mergeViolations(this.lastViolations, violations, MAX_VIOLATIONS)
     for (const v of violations) log(this.instance, `sandbox blocked ${v.kind}: ${v.target}`)
+    // drawing on the board is speech, not file access: every mode that answers may draw, in the councils it answers
+    const boardNotes = [...board.errors]
+    if (board.ops.length) for (const gid of groups) boardNotes.push(await applyBoardOps(e, gid, board.ops))
+    answer = [answer, ...boardNotes].filter(Boolean).join('\n\n')
     if (!answer) {
       if (violations.length) {
         for (const m of tasks) if (m.taskId) await e.updateTask(m.groupId, m.taskId, 'failed', BLOCKED_NOTE).catch(() => {})

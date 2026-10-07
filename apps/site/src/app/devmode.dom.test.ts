@@ -35,6 +35,13 @@ describe('watchWord', () => {
     expect(await hitsDuring(() => type(document.body, 'kurultaydev', { ctrlKey: true }))).toBe(0)
     expect(await hitsDuring(() => type(document.body, 'kurultaydev', { metaKey: true }))).toBe(0)
   })
+  test('ignores text being written on the board', async () => {
+    // Excalidraw edits text in a textarea inside its own container; typing the word there is writing, not the switch
+    const board = mount('div')
+    board.className = 'excalidraw'
+    const editor = board.appendChild(document.createElement('textarea'))
+    expect(await hitsDuring(() => type(editor, 'kurultaydev'))).toBe(0)
+  })
   test('ignores fields inside a shadow root', async () => {
     const root = mount('div').attachShadow({ mode: 'open' })
     const input = root.appendChild(document.createElement('input'))

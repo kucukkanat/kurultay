@@ -108,6 +108,9 @@ The recipient decrypts with `conversation_key(own_sk, wrap.pubkey)`.
 | `presence` | `status: online\|offline`, `card?`, `attestation?` | sent at least every 60 s |
 | `state` | `roster`, `epoch` | admins only; accepted if `epoch` is the current one and `roster.version` increases. A receiver no longer in the roster drops the group |
 | `leave` | — | admins remove the sender and rotate |
+| `board` | `els: Element[]`, `full?: true` | board elements that changed, or (with `full`) a whole board answering `board_req`; see *Board* |
+| `board_req` | — | the sender opened the board and asks a member who has it to send it |
+| `board_ptr` | `x`, `y` | the sender's pointer on the board, for live cursors; not stored |
 
 Receivers MUST ignore any group envelope whose inner `pubkey` is not in their current roster.
 
@@ -165,6 +168,35 @@ Clients MAY render a chat `text` as GitHub-flavoured Markdown. A client that doe
 - refuse a `vega-lite` spec that contains a `url` key anywhere, so a chart never fetches anything.
 
 Nothing on the wire changes: `text` stays a plain string within the size limit.
+
+## Board
+
+Every group has a shared whiteboard: a set of [Excalidraw](https://excalidraw.com) elements that its members draw on together. There is no board server. Each member's client keeps its own copy, and changes travel as `board` envelopes in the group channel, encrypted with the group key like `chat`.
+
+**Elements.** An element is Excalidraw element JSON. Receivers MUST check every element from a peer, and MUST drop it, before storing or rendering, unless:
+
+- `id` matches `^[\w-]{1,64}$`;
+- `type` is one of `rectangle`, `ellipse`, `diamond`, `text`, `arrow`, `line`, `freedraw`, `frame`. Clients MUST NOT accept `image`, `embeddable`, `iframe` or any other type that loads content from outside the group;
+- `version` is an integer ≥ 1, `versionNonce` is an integer, and `isDeleted` is a boolean;
+- `x` and `y` are finite and within ±10^6; `width` and `height` are finite, ≥ 0 and ≤ 10^6;
+- `text` and `originalText`, when present, are strings of at most 4000 characters;
+- `points`, when present, is an array of at most 4000 `[x, y]` pairs of finite numbers within ±10^6;
+- `containerId` and `frameId`, when present, are strings or `null`;
+- the element, as JSON, is at most 24 KiB.
+
+Receivers MUST also replace a `link` that is not an `http(s)` URL with `null`, MUST remove `customData`, and SHOULD set an `updated` that is not a number between 0 and 10^14 to 0.
+
+**Merge.** An incoming element replaces the stored element with the same `id` when its `version` is higher, or when the versions are equal and its `versionNonce` is lower. Every copy applies the same rule, so copies that saw the same elements converge whatever the order. Deleting an element is a new version with `isDeleted: true`. Clients MUST keep deleted elements (tombstones), so an older copy of the element arriving later cannot bring it back. A board holds at most 4000 elements, tombstones included: beyond that, clients MUST refuse new ids but still apply newer versions of elements they have.
+
+**Sending.** A sender puts only the elements that changed in a `board` envelope, and splits a large set over several envelopes whose `els`, as JSON, are at most 28 KiB each, so each envelope stays under the 32 KiB message limit.
+
+**Catching up.** A member who opens the board sends `board_req`. Every member who has a non-empty board waits a random 300–1800 ms and then sends its whole board, in chunks, with `full: true`. A member that receives a `full` envelope from someone else while waiting MUST cancel its own reply, so usually one member answers. Receivers merge `full` envelopes like any other `board` envelope.
+
+**Pointers.** `board_ptr` carries the sender's pointer position in scene coordinates. Receivers MAY show it as a cursor with the sender's name for a few seconds, and MUST NOT store it.
+
+**Speech rules.** Board envelopes follow the same rules as speech: receivers MUST drop `board`, `board_req` and `board_ptr` from a member in `roster.muted`, and from an agent while `roster.paused` is set. Senders SHOULD refuse to send them in those cases. Because a drag sends many small updates, board envelopes have their own rate limits, separate from chat (reference: senders send at most 300 per minute per group; receivers drop more than 600 per minute from one sender).
+
+**Agents** (non-normative). The reference MCP server lets agents read the board as one line per element and draw labelled shapes, text and arrows. An agent answering in the background writes a fenced `board` block of JSON, `{"draw": [...], "edit": [...], "delete": [...]}`. The service applies the block and replaces it with a short note. The block never goes on the wire.
 
 ## Attachments
 

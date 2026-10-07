@@ -8,6 +8,7 @@ import { Markdown } from './markdown'
 import { richBlocks } from './richblocks'
 import { Attachments, filesFrom, PendingChips, usePendingFiles, type PendingFiles } from './files'
 import { DevDrawer } from './Dev'
+import { BoardPanel, escLeavesFullBoard } from './BoardPanel'
 import { CouncilKeys } from './CouncilKeys'
 import { AddAgentDialog, AgentsList, MODES, myAgents } from './agents'
 import { DaemonSection } from './DaemonPanel'
@@ -196,6 +197,27 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
   const [threadId, setThreadId] = useState<string | null>(null)
   const { feed: visible, replies } = splitThreads(g.history)
   const root = threadId ? visible.find((m) => m.id === threadId) : undefined
+  // the council board beside the chat, full screen, or closed; each council's board opens on its own
+  const [board, setBoard] = useState<'closed' | 'side' | 'full'>('closed')
+  useEffect(() => setBoard('closed'), [g.id])
+  // one side panel at a time: the board gives way to a thread or the members list
+  const openThread = (id: string) => {
+    setBoard('closed')
+    setThreadId(id)
+  }
+  const showMembers = () => {
+    if (board !== 'closed') {
+      setBoard('closed')
+      if (!membersOpen) toggleMembers()
+    } else if (root) setThreadId(null)
+    else toggleMembers()
+  }
+  useEffect(() => {
+    if (board !== 'full') return
+    const onKey = (ev: KeyboardEvent) => escLeavesFullBoard(ev) && setBoard('side')
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [board])
   // attachments belong to the council they were added in
   useEffect(() => () => pending.items.forEach((p) => pending.remove(p.id)), [g.id])
 
@@ -209,7 +231,7 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
   const sub = dmPeer ? (dmPeer.kind === 'agent' ? 'agent' : 'direct message') : `${members.length} members · ${online} online`
 
   return (
-    <div class={`group-view ${root ? 'thread-open' : membersOpen ? 'members-open' : ''}`}>
+    <div class={`group-view ${board !== 'closed' ? 'board-open' : root ? 'thread-open' : membersOpen ? 'members-open' : ''}`}>
       <div
         class={`conversation ${dragging ? 'dragging' : ''}`}
         onDragOver={(ev) => {
@@ -244,7 +266,10 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
               <Icon name="link" size={16} /> Invite
             </button>
           )}
-          <button class={`icon-btn ${membersOpen && !root ? 'on' : ''}`} onClick={() => (root ? setThreadId(null) : toggleMembers())} aria-label="Members and tasks" aria-pressed={membersOpen && !root}>
+          <button class={`icon-btn ${board !== 'closed' ? 'on' : ''}`} onClick={() => setBoard(board === 'closed' ? 'side' : 'closed')} aria-label="Board" title="The council board: draw together, encrypted" aria-pressed={board !== 'closed'} data-testid="board-toggle">
+            <Icon name="board" />
+          </button>
+          <button class={`icon-btn ${membersOpen && !root && board === 'closed' ? 'on' : ''}`} onClick={showMembers} aria-label="Members and tasks" aria-pressed={membersOpen && !root && board === 'closed'}>
             <Icon name="users" />
           </button>
         </TopBar>
@@ -260,14 +285,16 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
           <div class="feed-inner">
             {visible.length === 0 && <p class="empty">Nothing said yet. Messages from before you joined don't exist anywhere: relays keep nothing.</p>}
             {visible.map((m, i) => (
-              <MessageRow key={m.id} e={e} g={g} m={m} prev={visible[i - 1]} names={names} replies={replies.get(m.id)} onThread={setThreadId} />
+              <MessageRow key={m.id} e={e} g={g} m={m} prev={visible[i - 1]} names={names} replies={replies.get(m.id)} onThread={openThread} />
             ))}
           </div>
         </div>
         <div class="typing-line">{typers.length ? `${typers.join(', ')} ${typers.length > 1 ? 'are' : 'is'} thinking…` : ''}</div>
         <Composer e={e} g={g} pending={pending} />
       </div>
-      {root ? <ThreadPanel e={e} g={g} root={root} replies={replies.get(root.id) ?? []} names={names} close={() => setThreadId(null)} /> : membersOpen && <MembersPanel e={e} g={g} close={toggleMembers} go={go} />}
+      {board !== 'closed' ? (
+        <BoardPanel e={e} g={g} full={board === 'full'} toggleFull={() => setBoard(board === 'full' ? 'side' : 'full')} close={() => setBoard('closed')} />
+      ) : root ? <ThreadPanel e={e} g={g} root={root} replies={replies.get(root.id) ?? []} names={names} close={() => setThreadId(null)} /> : membersOpen && <MembersPanel e={e} g={g} close={toggleMembers} go={go} />}
     </div>
   )
 }

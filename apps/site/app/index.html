@@ -13,6 +13,8 @@
     <script>
       try { var t = localStorage.getItem('kurultay:theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t) } catch (e) {}
     </script>
+    <!-- the board's fonts come from this site, never a CDN (vite-excalidraw.ts publishes them there) -->
+    <script>window.EXCALIDRAW_ASSET_PATH = '%BASE_URL%excalidraw/'</script>
   </head>
   <body class="app-body">
     <div id="root"></div>

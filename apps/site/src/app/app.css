@@ -2036,3 +2036,74 @@ code.folder {
   display: grid;
   gap: var(--s-1);
 }
+
+/* ------------------------------------------------------------------ council board (Excalidraw in its own React root) */
+.group-view.board-open {
+  grid-template-columns: minmax(0, 1fr) var(--board-w);
+}
+.board-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: var(--border-w) solid var(--line);
+  background: var(--paper);
+}
+.board-panel.full {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-board-full);
+  border-left: 0;
+}
+.board-head {
+  gap: var(--s-2);
+  padding-bottom: var(--s-2);
+  border-bottom: var(--border-w) solid var(--line);
+}
+.board-title {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  min-width: 0;
+}
+.board-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  color: var(--sage);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board-status {
+  margin: var(--s-3);
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.board-status.error {
+  color: var(--madder);
+}
+.board-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+@media (max-width: 1100px) {
+  .group-view.board-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .board-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(var(--board-drawer-w), 100vw);
+    z-index: var(--z-drawer);
+  }
+}
+@media (max-width: 760px) {
+  .board-panel {
+    width: 100vw;
+  }
+}

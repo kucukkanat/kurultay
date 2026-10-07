@@ -30,7 +30,9 @@ if (prompt.includes('please attach')) {
   fs.writeFileSync('report.txt', 'all green')
   attach = '\\n[[attach: report.txt]]\\n[[attach: /etc/passwd]]'
 }
-fs.writeFileSync(out, 'sandbox=' + sandbox + ' context=' + sawContext + ' cwd=' + process.cwd() + file + attach)
+// a background turn draws on the board with a fenced block, which the service applies and takes out of the answer
+const board = /▶[^\\n]*please draw/.test(prompt) ? '\\n\\n\`\`\`board\\n{"draw":[{"kind":"rectangle","x":0,"y":0,"label":"Deploy box"}]}\\n\`\`\`\\n' : ''
+fs.writeFileSync(out, 'sandbox=' + sandbox + ' context=' + sawContext + ' cwd=' + process.cwd() + file + attach + board)
 `,
 )
 chmodSync(join(bin, 'codex'), 0o755)
@@ -97,6 +99,13 @@ test('background agent answers when tagged, with council context, inside the own
   // a reply to the agent's answer, with no @mention, still reaches it, and it answers inside that thread
   const followUp = await owner.send(g.id, 'and who maintains it?', { thread: reply.id })
   await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.thread === followUp), 15000)
+  await until(() => owner.state.agentStatus?.[agentPk]?.running === false, 5000)
+
+  // drawing is speech: even in "talk" a ```board block lands on the council board, replaced by a one-line note
+  await owner.send(g.id, `@${handle} please draw the deploy`)
+  await until(() => Object.values(owner.boardScene(g.id)).some((el) => el.text === 'Deploy box'), 15000)
+  await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.text.includes('On the board: drew 1')), 15000)
+  expect(owner.state.groups[g.id].history.findLast((m) => m.from === agentPk)?.text).not.toContain('```board')
   await until(() => owner.state.agentStatus?.[agentPk]?.running === false, 5000)
 
   // owner raises the permission in the app → next turn runs with a writable sandbox

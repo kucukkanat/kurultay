@@ -16,6 +16,7 @@ import {
 import { decodeLink, encodeInvite, encodePair, encodeTicket } from './links'
 import { cleanFileRefs, DEFAULT_BLOSSOM, deleteBlob, downloadFile, encryptFile, FILE_TTL, MAX_FILES_PER_MESSAGE, normalizeServer, safeFileName, uploadBlob, type FileRef } from './files'
 import { RelayPool, type Frame, type RelayInfo } from './relay'
+import { chunkElements, mergeElements, type BoardElement } from './board'
 import {
   DEFAULT_RELAYS,
   MAX_TEXT_BYTES,
@@ -148,9 +149,16 @@ type EngineEvents = {
   approval: Approval
   notice: { level: 'info' | 'warn' | 'error'; text: string; groupId?: string }
   settings: { mode: AgentMode }
+  /** board elements that changed, from a peer or from me; `full` when a peer sent a whole board */
+  board: { groupId: string; from: string; elements: BoardElement[]; full: boolean }
+  /** another member's pointer on the board */
+  pointer: { groupId: string; from: string; x: number; y: number }
 }
 
 const ONLINE_WINDOW = 150
+/** Board envelopes per minute, apart from chat's limit: a drag sends a few a second, and a whole board goes out in chunks. */
+export const BOARD_SEND_PER_MINUTE = 300
+export const BOARD_RECV_PER_MINUTE = 600
 const HISTORY_LIMIT = 500
 
 export function emptyState(): State {
@@ -198,6 +206,10 @@ export class Kurultay extends Emitter<EngineEvents> {
   private tagMap = new Map<string, { channel: 'inbox' } | { channel: 'group'; groupId: string; key: string }>()
   private sendLog = new Map<string, number[]>()
   private recvLog = new Map<string, number[]>()
+  private boardSendLog = new Map<string, number[]>()
+  private boardRecvLog = new Map<string, number[]>()
+  /** answers to a board_req I am waiting to send, by group; cancelled when someone else answers first */
+  private boardReplies = new Map<string, ReturnType<typeof setTimeout>>()
   private lastPresence = 0
   private lastRetry = 0
   private presenceInterval: number
@@ -267,6 +279,8 @@ export class Kurultay extends Emitter<EngineEvents> {
     this.started = false
     for (const t of this.timers) clearInterval(t)
     this.timers = []
+    for (const t of this.boardReplies.values()) clearTimeout(t)
+    this.boardReplies.clear()
     await Promise.race([
       Promise.all(Object.keys(this.state.groups).map((g) => this.sendGroup(g, { type: 'presence', status: 'offline' }))),
       new Promise((r) => setTimeout(r, 1500)),
@@ -498,7 +512,94 @@ export class Kurultay extends Emitter<EngineEvents> {
       case 'leave':
         if (this.isAdmin(groupId) && from !== this.pubkey) void this.removeMember(groupId, from, 'left')
         break
+      case 'board':
+      case 'board_req':
+      case 'board_ptr':
+        this.onBoard(g, from, member.kind, env)
+        break
     }
+  }
+
+  // ------------------------------------------------------------------ board
+
+  /**
+   * Board traffic follows the speech rules (a muted member, or an agent in a paused council, cannot draw) but has its own,
+   * higher rate limit, so dragging a shape never eats into the chat limit.
+   */
+  private onBoard(g: GroupState, from: string, kind: PeerKind, env: Extract<Envelope, { type: 'board' | 'board_req' | 'board_ptr' }>) {
+    const mine = from === this.pubkey
+    if (!mine && (g.roster.muted.includes(from) || (g.roster.paused && kind === 'agent'))) return
+    if (!mine && !this.rateOk(this.boardRecvLog, g.id + from, BOARD_RECV_PER_MINUTE)) return
+    if (env.type === 'board_ptr') {
+      if (!mine && Number.isFinite(env.x) && Number.isFinite(env.y)) this.emit('pointer', { groupId: g.id, from, x: env.x, y: env.y })
+      return
+    }
+    if (env.type === 'board_req') {
+      if (mine || !Object.keys(g.board ?? {}).length || this.boardReplies.has(g.id)) return
+      // everyone who has the board would answer at once: a random wait lets the first answer cancel the rest
+      const reply = setTimeout(() => {
+        this.boardReplies.delete(g.id)
+        void this.sendBoard(g.id, Object.values(this.state.groups[g.id]?.board ?? {}), true).catch(() => {})
+      }, 300 + Math.random() * 1500)
+      this.boardReplies.set(g.id, reply)
+      return
+    }
+    if (!Array.isArray(env.els)) return
+    if (env.full && !mine) {
+      clearTimeout(this.boardReplies.get(g.id))
+      this.boardReplies.delete(g.id)
+    }
+    const { next, changed } = mergeElements(g.board ?? {}, env.els)
+    if (!changed.length) return
+    g.board = next
+    // persisted, but not a 'change': a stroke must not re-render the whole app
+    this.persist()
+    this.emit('board', { groupId: g.id, from, elements: changed, full: !!env.full })
+  }
+
+  private async sendBoard(groupId: string, els: readonly BoardElement[], full = false) {
+    for (const chunk of chunkElements(els)) {
+      if (!this.rateOk(this.boardSendLog, groupId, BOARD_SEND_PER_MINUTE)) throw new KurultayError(`Board rate limit: at most ${BOARD_SEND_PER_MINUTE} updates per minute. Wait a moment.`)
+      await this.sendGroup(groupId, { type: 'board', els: chunk, ...(full ? { full: true } : {}) })
+    }
+  }
+
+  private guardBoard(groupId: string): GroupState {
+    const g = this.state.groups[groupId]
+    if (!g) throw new KurultayError(`Unknown group ${groupId}`)
+    if (g.roster.muted.includes(this.pubkey)) throw new KurultayError('You are muted in this group')
+    if (g.roster.paused && this.kind === 'agent') throw new KurultayError('The group is paused by a moderator; agents cannot draw until it is resumed')
+    return g
+  }
+
+  /** The board as I have it: Excalidraw elements by id, deleted ones included. */
+  boardScene(groupId: string): Record<string, BoardElement> {
+    return this.state.groups[groupId]?.board ?? {}
+  }
+
+  /**
+   * Puts elements on the board and sends the ones that changed it to the council, encrypted with the group key like any
+   * message. The app passes what Excalidraw changed, agents pass what board.ts builds. Returns the elements that changed
+   * the board (one no newer than mine changes nothing and is not sent).
+   */
+  async drawBoard(groupId: string, els: readonly unknown[]): Promise<BoardElement[]> {
+    const g = this.guardBoard(groupId)
+    const { changed } = mergeElements(g.board ?? {}, els)
+    if (changed.length) await this.sendBoard(groupId, changed)
+    return changed
+  }
+
+  /** Asks the council for the board: someone who has it answers with all of it. Call when the board opens. */
+  async requestBoard(groupId: string) {
+    this.guardBoard(groupId)
+    await this.sendGroup(groupId, { type: 'board_req' })
+  }
+
+  /** Shows the others where my pointer is on the board. Callers throttle; over the board rate it is silently skipped. */
+  async boardPointer(groupId: string, x: number, y: number) {
+    this.guardBoard(groupId)
+    if (!this.rateOk(this.boardSendLog, groupId, BOARD_SEND_PER_MINUTE)) return
+    await this.sendGroup(groupId, { type: 'board_ptr', x: Math.round(x), y: Math.round(y) })
   }
 
   private record(g: GroupState, msg: Message, forMe: boolean) {
