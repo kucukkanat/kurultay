@@ -1,11 +1,11 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { HOSTS, LABEL, uninstallFor } from './install'
 import { configRoot } from './instance'
-import { daemonAgents, daemonPost } from './ipc'
+import { stopDaemonAndWait } from './ipc'
 import { deleteKey } from './keystore'
 import { startService, stopService } from './service'
 import { compareBuilds, parseBuildInfo, UpdateError, type Build } from './updatecheck'
@@ -51,13 +51,24 @@ const fetchJson = async (url: string): Promise<unknown> => {
   }
 }
 
+const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex')
+
+/** A published file, checked against the sha256 build.json gives for it. */
+async function download(base: string, path: string, sha: string): Promise<Uint8Array> {
+  const bytes = new Uint8Array(await (await fetchOk(`${base}/${path}`)).arrayBuffer())
+  // raw.githubusercontent.com caches each file for minutes: build.json and the file can come from different dist commits
+  if (sha256(bytes) !== sha) throw new UpdateError(`${path} does not match build.json (the dist branch probably just moved: try again in a few minutes)`)
+  return bytes
+}
+
 const NOT_HERE = 'It updates the background copy only: plugin and npx installs fetch the latest build on their own, and pi updates with `pi update`.'
 
 /**
- *   kurultay update            install the published build when it differs (and restart the service if it was running)
+ *   kurultay update            install the published build when it differs (and restart the service if it was running),
+ *                              and the sandbox helper programs beside it when they are missing or differ
  *   kurultay update --check    only report; exit 2 when a newer build exists, so scripts can act on it
  *   kurultay update --force    reinstall even when up to date
- * Any failure leaves the installed file as it was and exits 1.
+ * Any failure leaves the installed files as they were and exits 1.
  */
 export async function runUpdate(argv: readonly string[]): Promise<number> {
   const runtime = runtimePath()
@@ -65,8 +76,9 @@ export async function runUpdate(argv: readonly string[]): Promise<number> {
     console.error(`There is no background copy at ${runtime} to update. Run the "Add your agents" command from the app first.\n${NOT_HERE}`)
     return 1
   }
-  // keeps the .mjs extension: Node loads any other one as CommonJS, and the ES module bundle would not start
-  const next = runtime.replace(/\.mjs$/, '.new.mjs')
+  const binDir = dirname(runtime)
+  // every file written beside its target, so the renames below are atomic (same file system); removed again on any failure
+  const staged: { from: string; to: string }[] = []
   try {
     const base = updateBase()
     console.log(`Checking the published build at ${base}…`)
@@ -76,38 +88,56 @@ export async function runUpdate(argv: readonly string[]): Promise<number> {
     console.log(`  published: kurultay ${versionDetail(remote.version, remote.commit, remote.builtAt)}`)
     const verdict = compareBuilds(local, remote)
     const force = argv.includes('--force')
-    if (verdict.kind === 'up-to-date' && !force) {
-      console.log(verdict.sameCode ? "You're up to date: the published build has a newer commit with the same code (only docs or tests changed)." : "You're up to date.")
-      return 0
-    }
     if (verdict.kind === 'local-ahead' && !force) {
       console.log(`The installed copy (${local.version}) is newer than the published one (${remote.version}): nothing to update.`)
       return 0
     }
+    // the sandbox helpers beside the bundle: missing in copies installed before they shipped, stale after srt moves on
+    const helpers = Object.entries(remote.vendor).filter(([rel, sha]) => {
+      const p = join(binDir, 'vendor', rel)
+      return force || !existsSync(p) || sha256(readFileSync(p)) !== sha
+    })
+    const bundleCurrent = verdict.kind === 'up-to-date' && !force
+    if (bundleCurrent && helpers.length === 0) {
+      console.log(verdict.sameCode ? "You're up to date: the published build has a newer commit with the same code (only docs or tests changed)." : "You're up to date.")
+      return 0
+    }
     console.log(
-      verdict.kind === 'new-version'
-        ? `A new version is available: ${local.version} → ${remote.version}.`
-        : verdict.kind === 'new-build-same-version'
-          ? `A newer build is available under the same version number (${remote.version}): the commit moved from ${shortCommit(local.commit)} to ${shortCommit(remote.commit)}, but the version was not bumped.`
-          : 'Reinstalling the published build.',
+      bundleCurrent
+        ? `The bundle is up to date, but the sandbox helper programs are missing or out of date: ${helpers.map(([rel]) => rel).join(', ')}.`
+        : verdict.kind === 'new-version'
+          ? `A new version is available: ${local.version} → ${remote.version}.`
+          : verdict.kind === 'new-build-same-version'
+            ? `A newer build is available under the same version number (${remote.version}): the commit moved from ${shortCommit(local.commit)} to ${shortCommit(remote.commit)}, but the version was not bumped.`
+            : 'Reinstalling the published build.',
     )
     if (argv.includes('--check')) {
       console.log('Run `kurultay update` to install it.')
       return 2
     }
-    const bytes = new Uint8Array(await (await fetchOk(`${base}/dist/cli.js`)).arrayBuffer())
-    // raw.githubusercontent.com caches each file for minutes: build.json and cli.js can come from different dist commits
-    if (createHash('sha256').update(bytes).digest('hex') !== remote.sha256) throw new UpdateError('dist/cli.js does not match build.json (the dist branch probably just moved: try again in a few minutes)')
-    // beside the runtime, so the rename below is atomic (same file system): agents never see a half-written file
-    writeFileSync(next, bytes, { mode: 0o755 })
-    const fresh = stampOf(next)
-    if (fresh?.commit !== remote.commit) throw new UpdateError('the downloaded build does not start')
-    const wasRunning = (await daemonAgents()) !== null
-    renameSync(next, runtime)
+    for (const [rel, sha] of helpers) {
+      const to = join(binDir, 'vendor', rel)
+      mkdirSync(dirname(to), { recursive: true })
+      staged.push({ from: `${to}.new`, to })
+      writeFileSync(`${to}.new`, await download(base, `dist/vendor/${rel}`, sha), { mode: 0o755 })
+    }
+    if (!bundleCurrent) {
+      // keeps the .mjs extension: Node loads any other one as CommonJS, and the ES module bundle would not start
+      const next = runtime.replace(/\.mjs$/, '.new.mjs')
+      // last in line: the helpers are in place before the bundle that uses them
+      staged.push({ from: next, to: runtime })
+      writeFileSync(next, await download(base, 'dist/cli.js', remote.sha256), { mode: 0o755 })
+      if (stampOf(next)?.commit !== remote.commit) throw new UpdateError('the downloaded build does not start')
+    }
+    for (const { from, to } of staged) renameSync(from, to)
+    if (helpers.length) console.log(`✓ Updated the sandbox helper programs in ${join(binDir, 'vendor')}`)
+    if (bundleCurrent) return 0
     console.log(`✓ Updated ${runtime} to kurultay ${versionDetail(remote.version, remote.commit, remote.builtAt)}`)
-    // an update never starts a service you had stopped
-    if (wasRunning) {
-      await daemonPost('/stop').catch(() => {})
+    // restart only a service that was running: an update never starts one you had stopped. Wait for the old one to exit
+    // first, or its shutdown removes the new one's socket and port file
+    const stopped = await stopDaemonAndWait()
+    if (stopped === 'timeout') console.log('! The background service did not stop in time: restarting it anyway.')
+    if (stopped !== 'none') {
       const r = startService(runtime)
       console.log(r.ok ? '✓ Restarted the background service.' : `! Could not restart the background service${r.detail ? `: ${r.detail}` : ''}`)
     }
@@ -118,7 +148,7 @@ export async function runUpdate(argv: readonly string[]): Promise<number> {
     console.error(`Update failed: ${err.message}. Nothing was changed.`)
     return 1
   } finally {
-    rmSync(next, { force: true })
+    for (const { from } of staged) rmSync(from, { force: true })
   }
 }
 
@@ -140,8 +170,8 @@ export async function runUninstall(argv: readonly string[]): Promise<number> {
     console.log(`This removes the Kurultay background service, the kurultay entries and skill in your agent CLIs, your agents' keys and ${root}.\nAgent keys cannot be recovered.`)
     if (!(await confirm('Uninstall Kurultay?'))) return 1
   }
-  // no service running is fine: there is nothing to stop
-  await daemonPost('/stop').catch(() => {})
+  // no service running is fine: there is nothing to stop. Waiting keeps its shutdown from racing the folder removal below
+  await stopDaemonAndWait()
   console.log(`✓ ${stopService()}`)
   for (const host of HOSTS) {
     if (host === 'vscode') continue // per project: join never writes it

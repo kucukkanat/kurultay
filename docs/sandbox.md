@@ -129,7 +129,7 @@ Files the CLI itself rewrites on every run cannot be protected this way; they ar
 
 `kurultay sandbox status` prints the same answer. If the sandbox cannot run at turn time, or the CLI has no profile, the turn runs **without it** (D6): the service logs `sandbox unavailable, ran without it: <reason>`, My agents shows a warning, and the reply ends with *"(I ran without my sandbox this time: <reason>.)"*.
 
-**Helper programs.** srt's Linux seccomp filter (`apply-seccomp`) and the Windows `srt-win.exe`, for x64 and arm64, are files, not code. `packages/mcp/scripts/copy-vendor.ts` copies them to `dist/vendor/` after `bun build`, `scripts/assemble-dist.sh` refuses to assemble without them and puts them on the `dist` branch, and `join` copies them next to `~/.config/kurultay/bin/kurultay.mjs`. Nothing is downloaded at run time. On Linux the helper lives in the denied config folder, so the turn re-opens that one file for reading.
+**Helper programs.** srt's Linux seccomp filter (`apply-seccomp`) and the Windows `srt-win.exe`, for x64 and arm64, are files, not code. `packages/mcp/scripts/build.ts` copies them to `dist/vendor/` after `bun build` and lists the sha256 of each in `build.json`, `scripts/assemble-dist.sh` refuses to assemble without them and puts them on the `dist` branch, and `join` copies them next to `~/.config/kurultay/bin/kurultay.mjs`. `kurultay update` downloads any that are missing or differ, checked against `build.json`. Nothing is downloaded at run time. On Linux the helper lives in the denied config folder, so the turn re-opens that one file for reading.
 
 ## What you are told
 

@@ -1,12 +1,14 @@
-import { afterAll, beforeAll, beforeEach, expect, setDefaultTimeout, test } from 'bun:test'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test'
+import { cpSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { stopDaemonAndWait } from '../src/ipc'
 
 setDefaultTimeout(60_000)
 
 const pkg = join(import.meta.dir, '..')
-const tmp = mkdtempSync(join(tmpdir(), 'kurultay-selfmanage-'))
+// short: the daemon's socket lives below it, and macOS caps Unix socket paths at 104 bytes
+const tmp = mkdtempSync(join(tmpdir(), 'ksm-'))
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
 const BUILT = '2026-10-01T12:00:00.000Z'
@@ -20,20 +22,21 @@ interface Stamp {
   hash: string
   builtAt: string
   sha256: string
+  vendor: Record<string, string>
 }
 
 /** Build the real bundle, stamped as `commit` (what CI does with GITHUB_SHA). */
-async function build(name: string, commit: string): Promise<{ cli: string; info: Stamp }> {
+async function build(name: string, commit: string): Promise<{ cli: string; vendor: string; info: Stamp }> {
   const out = join(tmp, name)
   const p = Bun.spawn(['bun', 'scripts/build.ts', out], { cwd: pkg, env: { ...process.env, KURULTAY_COMMIT: commit, KURULTAY_BUILT_AT: BUILT }, stdout: 'ignore', stderr: 'inherit' })
   expect(await p.exited).toBe(0)
-  return { cli: join(out, 'cli.js'), info: JSON.parse(readFileSync(join(out, 'build.json'), 'utf8')) }
+  return { cli: join(out, 'cli.js'), vendor: join(out, 'vendor'), info: JSON.parse(readFileSync(join(out, 'build.json'), 'utf8')) }
 }
 
-let a: { cli: string; info: Stamp }
-let b: { cli: string; info: Stamp }
-/** What the fake `dist` branch serves: build.json and dist/cli.js, as raw.githubusercontent.com would */
-let published: { info: unknown; cli: string; status: number }
+let a: { cli: string; vendor: string; info: Stamp }
+let b: { cli: string; vendor: string; info: Stamp }
+/** What the fake `dist` branch serves: build.json, dist/cli.js and dist/vendor/, as raw.githubusercontent.com would */
+let published: { info: unknown; cli: string; vendor: string; status: number }
 const server = Bun.serve({
   port: 0,
   fetch(req) {
@@ -41,6 +44,8 @@ const server = Bun.serve({
     if (published.status !== 200) return new Response('nope', { status: published.status })
     if (path === '/build.json') return Response.json(published.info)
     if (path === '/dist/cli.js') return new Response(published.cli)
+    const helper = join(published.vendor, path.replace(/^\/dist\/vendor\//, ''))
+    if (path.startsWith('/dist/vendor/') && existsSync(helper)) return new Response(Bun.file(helper))
     return new Response('not found', { status: 404 })
   },
 })
@@ -48,6 +53,8 @@ const server = Bun.serve({
 const home = join(tmp, 'home')
 const root = join(home, '.config/kurultay')
 const runtime = join(root, 'bin/kurultay.mjs')
+const vendor = join(root, 'bin/vendor')
+const SECCOMP = 'seccomp/x64/apply-seccomp'
 
 async function run(args: string[], env: Record<string, string> = {}): Promise<{ code: number; out: string }> {
   const p = Bun.spawn(['node', a.cli, ...args], {
@@ -67,7 +74,10 @@ afterAll(() => server.stop(true))
 beforeEach(() => {
   mkdirSync(join(root, 'bin'), { recursive: true })
   copyFileSync(a.cli, runtime)
-  published = { info: b.info, cli: readFileSync(b.cli, 'utf8'), status: 200 }
+  // what `join` installs: the bundle with its helper programs beside it
+  rmSync(vendor, { recursive: true, force: true })
+  cpSync(a.vendor, vendor, { recursive: true })
+  published = { info: b.info, cli: readFileSync(b.cli, 'utf8'), vendor: b.vendor, status: 200 }
 })
 
 test('--version shows the version, short commit and build time; a source run shows dev', async () => {
@@ -112,6 +122,94 @@ test('a tampered download, a 404 and an unreachable server change nothing', asyn
   expect(await run(['update'], { KURULTAY_UPDATE_URL: 'http://127.0.0.1:1' })).toMatchObject({ code: 1, out: expect.stringContaining('could not reach') })
   expect(readFileSync(runtime)).toEqual(before)
   expect(existsSync(join(root, 'bin/kurultay.new.mjs'))).toBe(false)
+})
+
+test('build.json lists the sha256 of every helper program shipped in vendor/', () => {
+  expect(Object.keys(b.info.vendor).sort()).toEqual(['seccomp/arm64/apply-seccomp', SECCOMP, 'srt-win/arm64/srt-win.exe', 'srt-win/x64/srt-win.exe'])
+  for (const [rel, sha] of Object.entries(b.info.vendor)) expect(new Bun.CryptoHasher('sha256').update(readFileSync(join(b.vendor, rel))).digest('hex')).toBe(sha)
+})
+
+test('update fetches missing or changed helper programs, even when the bundle is up to date', async () => {
+  // a copy installed before vendor/ shipped, and one whose helper differs from the published one
+  rmSync(join(vendor, 'srt-win'), { recursive: true })
+  writeFileSync(join(vendor, SECCOMP), 'old helper')
+  published.info = a.info
+  const check = await run(['update', '--check'])
+  expect(check.code).toBe(2)
+  expect(check.out).toContain('helper programs are missing or out of date')
+  expect(check.out).toContain(SECCOMP)
+  expect(check.out).not.toContain('seccomp/arm64')
+  expect(readFileSync(join(vendor, SECCOMP), 'utf8')).toBe('old helper')
+
+  const up = await run(['update'])
+  expect(up.code).toBe(0)
+  expect(up.out).toContain('✓ Updated the sandbox helper programs')
+  expect(up.out).not.toContain(`✓ Updated ${runtime}`)
+  for (const rel of Object.keys(b.info.vendor)) expect(readFileSync(join(vendor, rel))).toEqual(readFileSync(join(b.vendor, rel)))
+  expect(await run(['update'])).toMatchObject({ code: 0, out: expect.stringContaining("You're up to date.") })
+})
+
+test('a helper that does not match build.json changes nothing, the bundle included', async () => {
+  rmSync(join(vendor, SECCOMP))
+  published.info = { ...b.info, hash: 'src1:other', vendor: { ...b.info.vendor, [SECCOMP]: 'c'.repeat(64) } }
+  expect(await run(['update'])).toMatchObject({ code: 1, out: expect.stringContaining(`dist/vendor/${SECCOMP} does not match build.json`) })
+  expect(readFileSync(runtime)).toEqual(readFileSync(a.cli))
+  expect(existsSync(join(vendor, SECCOMP))).toBe(false)
+  expect(existsSync(join(vendor, `${SECCOMP}.new`))).toBe(false)
+})
+
+describe('with a running plain-process service', () => {
+  // a fixed control port: a new daemon can only take it once the old one has let go of it
+  const free = Bun.serve({ port: 0, fetch: () => new Response() })
+  const env = { KURULTAY_PORT: String(free.port) }
+  free.stop(true)
+  const pidOf = async () => (await run(['status'], env)).out.match(/background service \(pid (\d+)\)/)?.[1]
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  let old: ReturnType<typeof Bun.spawn>
+  beforeEach(async () => {
+    old = Bun.spawn(['node', runtime, 'daemon'], { env: { ...process.env, HOME: home, KURULTAY_HOME: root, KURULTAY_NO_SERVICE: '1', KURULTAY_NO_KEYCHAIN: '1', ...env }, stdout: 'ignore', stderr: 'ignore' })
+    for (let i = 0; i < 100 && !(await pidOf()); i++) await Bun.sleep(100)
+    expect(await pidOf()).toBe(String(old.pid))
+  })
+  afterEach(async () => {
+    await run(['stop'], env)
+    old.kill()
+  })
+
+  test('stopDaemonAndWait returns only once the daemon process is gone', async () => {
+    const saved = process.env.KURULTAY_HOME
+    process.env.KURULTAY_HOME = root
+    try {
+      expect(await stopDaemonAndWait()).toBe('stopped')
+      expect(alive(old.pid)).toBe(false)
+      expect(existsSync(join(root, 'daemon.port'))).toBe(false)
+      expect(await stopDaemonAndWait()).toBe('none')
+    } finally {
+      process.env.KURULTAY_HOME = saved
+    }
+  })
+
+  test('update restarts it, and the new one stays reachable once the old one has exited', async () => {
+    published.info = { ...b.info, hash: 'src1:other' }
+    const up = await run(['update'], env)
+    expect(up.code).toBe(0)
+    expect(up.out).toContain('✓ Restarted the background service.')
+    expect(alive(old.pid)).toBe(false)
+    let fresh: string | undefined
+    for (let i = 0; i < 100 && !(fresh = await pidOf()); i++) await Bun.sleep(100)
+    // time for a late shutdown of the old daemon to take the socket and port file with it, if it were still running
+    await Bun.sleep(1000)
+    expect(fresh).not.toBe(String(old.pid))
+    expect(await pidOf()).toBe(fresh)
+    expect(readFileSync(join(root, 'daemon.port'), 'utf8')).toBe(env.KURULTAY_PORT)
+  })
 })
 
 test('update without a background copy says how to get one', async () => {

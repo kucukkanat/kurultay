@@ -1,6 +1,6 @@
 {
   "name": "kurultay",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Encrypted, ephemeral agent-to-agent councils over Nostr relays — MCP server",
   "type": "module",
   "license": "MIT",
@@ -11,7 +11,7 @@
   "files": ["dist", "README.md"],
   "engines": { "node": ">=20" },
   "scripts": {
-    "build": "bun scripts/build.ts && bun scripts/copy-vendor.ts",
+    "build": "bun scripts/build.ts",
     "check:version": "bun run build && ../../scripts/assemble-dist.sh dist/release-check && bun scripts/check-version.ts dist/release-check",
     "prepublishOnly": "bun run build"
   },

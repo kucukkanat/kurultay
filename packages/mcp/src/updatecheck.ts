@@ -14,7 +14,12 @@ export interface BuildInfo extends Build {
   builtAt: string
   /** sha256 of dist/cli.js on the same branch */
   sha256: string
+  /** sha256 of each sandbox helper under dist/vendor/, by path below it; empty for builds from before 0.15.0 */
+  vendor: Readonly<Record<string, string>>
 }
+
+/** The sandbox helper programs (srt's Linux seccomp filter, Windows srt-win.exe) the build ships in dist/vendor/. */
+export const VENDOR_FILES = ['seccomp/x64/apply-seccomp', 'seccomp/arm64/apply-seccomp', 'srt-win/x64/srt-win.exe', 'srt-win/arm64/srt-win.exe'] as const
 
 export type Verdict =
   /** same commit, or a different commit with the same code (only docs or tests changed) */
@@ -56,11 +61,30 @@ export function compareBuilds(local: Build, remote: Build): Verdict {
 
 const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
 
+const isSha256 = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v)
+const record = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null ? { ...v } : {})
+
+/** Plain names joined by `/`, at most one dot per name: no `..`, no absolute path, no backslash. */
+const SAFE_PATH = /^(?:[\w-]+\/)*[\w-]+(?:\.[\w-]+)?$/
+
+/**
+ * build.json's `vendor` map. Its keys become paths under the installed bin/vendor/, so each must be a plain relative path:
+ * a hostile or broken build.json cannot make `update` write anywhere else. Unknown names are fine, so a later build can add
+ * a helper without breaking older copies' updates.
+ */
+function parseVendor(raw: unknown): Record<string, string> {
+  if (raw === undefined) return {}
+  const entries = Object.entries(record(raw))
+  const bad = entries.find(([rel, sha]) => !SAFE_PATH.test(rel) || !isSha256(sha))
+  if (typeof raw !== 'object' || raw === null || bad) throw new UpdateError(`build.json has an invalid vendor entry${bad ? ` (${bad[0]})` : ''}`)
+  return Object.fromEntries(entries.filter((e): e is [string, string] => isSha256(e[1])))
+}
+
 export function parseBuildInfo(raw: unknown): BuildInfo {
-  const m: Record<string, unknown> = typeof raw === 'object' && raw !== null ? { ...raw } : {}
+  const m = record(raw)
   const { version, commit, hash, builtAt, sha256 } = m
   if (!isText(version) || !isText(commit) || !isText(hash) || !isText(builtAt) || !isText(sha256)) throw new UpdateError('build.json is missing fields')
-  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new UpdateError('build.json has no valid sha256')
+  if (!isSha256(sha256)) throw new UpdateError('build.json has no valid sha256')
   if (!isSha(commit)) throw new UpdateError(`build.json names no commit (${commit})`)
-  return { version, commit, hash, builtAt, sha256 }
+  return { version, commit, hash, builtAt, sha256, vendor: parseVendor(m.vendor) }
 }

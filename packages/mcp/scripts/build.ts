@@ -4,11 +4,13 @@
 //            the same across machines and Bun versions, so `update` can tell "only docs moved" and CI can tell "bump the version"
 //   builtAt  ISO time; KURULTAY_BUILT_AT pins it (tests)
 //   sha256   of cli.js, so `kurultay update` can check what it downloaded
+//   vendor   sha256 of each sandbox helper program copied to <out>/vendor/, so `kurultay update` refreshes those as well
 // It also writes <out>/COMMIT and <out>/BUILD_HASH (one line each) for scripts/check-version.ts, the version-bump guard.
 // CI copies build.json, COMMIT and BUILD_HASH to the root of the `dist` branch (scripts/assemble-dist.sh).
 import { createHash } from 'node:crypto'
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { chmodSync, cpSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
+import { VENDOR_FILES } from '../src/updatecheck'
 import { repoSourceHash } from './version-drift'
 
 const root = resolve(import.meta.dir, '..')
@@ -50,8 +52,20 @@ if (!built.success) {
 const cli = join(out, 'cli.js')
 chmodSync(cli, 0o755)
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-const sha256 = createHash('sha256').update(readFileSync(cli)).digest('hex')
-writeFileSync(join(out, 'build.json'), JSON.stringify({ version, commit: sha, hash, builtAt, sha256 }, null, 2) + '\n')
+const sha256Of = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex')
+// srt's helper programs (Linux seccomp filter, Windows srt-win.exe) are files, not code, so `bun build` cannot inline them:
+// they go beside the bundle, where src/sandbox/srt.ts `vendored()` and srt itself look
+const srt = join(dirname(Bun.resolveSync('@anthropic-ai/sandbox-runtime', root)), '..')
+rmSync(join(out, 'vendor'), { recursive: true, force: true })
+const vendor = Object.fromEntries(
+  VENDOR_FILES.map((rel) => {
+    const to = join(out, 'vendor', rel)
+    cpSync(join(srt, 'vendor', rel), to)
+    chmodSync(to, 0o755)
+    return [rel, sha256Of(to)]
+  }),
+)
+writeFileSync(join(out, 'build.json'), JSON.stringify({ version, commit: sha, hash, builtAt, sha256: sha256Of(cli), vendor }, null, 2) + '\n')
 writeFileSync(join(out, 'COMMIT'), `${sha}\n`)
 writeFileSync(join(out, 'BUILD_HASH'), `${hash}\n`)
 console.log(`built ${relative(process.cwd(), cli) || cli} ${version} (${sha.replace(/^([0-9a-f]{7})[0-9a-f]+/, '$1')})`)

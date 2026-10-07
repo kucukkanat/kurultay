@@ -59,9 +59,15 @@ test('builtAtLine shows local time and age, and nothing when the time is unknown
 
 test('parseBuildInfo checks every field', () => {
   const ok = { version: '0.8.0', commit: A, hash: 'src1:x', builtAt: '2026-10-08T12:00:00Z', sha256: 'f'.repeat(64) }
-  expect(parseBuildInfo(ok)).toEqual(ok)
+  expect(parseBuildInfo(ok)).toEqual({ ...ok, vendor: {} })
   expect(() => parseBuildInfo({ ...ok, hash: undefined })).toThrow(UpdateError)
   expect(() => parseBuildInfo(null)).toThrow('missing fields')
   expect(() => parseBuildInfo({ ...ok, sha256: 'abc' })).toThrow('sha256')
   expect(() => parseBuildInfo({ ...ok, commit: 'dev' })).toThrow('no commit')
+  // vendor names become paths under bin/vendor/: plain relative paths only, any name, so later builds can add helpers
+  const vendor = { 'seccomp/x64/apply-seccomp': 'a'.repeat(64), 'future/helper.bin': 'b'.repeat(64) }
+  expect(parseBuildInfo({ ...ok, vendor }).vendor).toEqual(vendor)
+  for (const rel of ['../escape', '/etc/passwd', 'a/../../b', 'a\\b', 'a/..', '']) expect(() => parseBuildInfo({ ...ok, vendor: { [rel]: 'a'.repeat(64) } })).toThrow('invalid vendor entry')
+  expect(() => parseBuildInfo({ ...ok, vendor: { 'seccomp/x64/apply-seccomp': 'nope' } })).toThrow('invalid vendor entry')
+  expect(() => parseBuildInfo({ ...ok, vendor: 'x' })).toThrow('invalid vendor entry')
 })

@@ -221,9 +221,8 @@ describe.skipIf(!avail.ok)('a sandboxed turn', () => {
     const node = Bun.which('node')
     if (!node) throw new Error('node is needed to run the built bundle')
     const out = tmp('bundle')
-    const build = Bun.spawnSync(['bun', 'build', 'src/cli.ts', '--target=node', `--outfile=${join(out, 'cli.js')}`, '--external', 'bufferutil', '--external', 'utf-8-validate'], { cwd: mcpRoot, stderr: 'pipe' })
+    const build = Bun.spawnSync(['bun', 'scripts/build.ts', out], { cwd: mcpRoot, stderr: 'pipe' })
     expect(build.exitCode).toBe(0)
-    expect(Bun.spawnSync(['bun', 'scripts/copy-vendor.ts', join(out, 'vendor')], { cwd: mcpRoot }).exitCode).toBe(0)
 
     // install the way an owner does, into a throwaway home: `join` copies the bundle and its vendor/ beside it
     const l = layout()

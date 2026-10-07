@@ -5,7 +5,7 @@ import { decodeTicket, DEFAULT_RELAYS, Kurultay, type AgentTicket } from '@kurul
 import { configRoot, FileStorage } from './instance'
 import { detectHosts, HOSTS, type Host } from './install'
 import { LABEL, seatAgents, type Prepared } from './seat'
-import { daemonAgents, daemonPost, daemonStatus } from './ipc'
+import { daemonAgents, daemonStatus, stopDaemonAndWait } from './ipc'
 import { readRegistry, writeRegistry } from './daemon'
 import { daemonLog, startService } from './service'
 
@@ -76,10 +76,7 @@ its own identity verified as yours, and seats it in the ticket's councils.`)
   console.log(`\n${c.bold('Kurultay')} — seating your agents for ${ticket.owner.name} in ${where}\n`)
   const useBackground = !!runtime && !argv.includes('--no-background')
   // the background service owns the agents' state: pause it while we write, restart it afterwards
-  if (useBackground && (await daemonAgents())) {
-    await daemonPost('/stop').catch(() => {})
-    for (let i = 0; i < 30 && (await daemonAgents()); i++) await new Promise((r) => setTimeout(r, 100))
-  }
+  if (useBackground && (await stopDaemonAndWait()) === 'timeout') console.log(`  ${c.warn('!')} The background service did not stop in time: restarting it anyway`)
 
   const prepared: Prepared[] = []
   for (const { prepared: p, steps } of seatAgents(ticket, hosts, runtime)) {

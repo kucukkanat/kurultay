@@ -46,6 +46,27 @@ export function daemonStatus() {
   return call<{ pid: number; version: string; paused?: boolean; agents: { instance: string; name: string; mode: string; workdir: string; host: string; online: boolean; running: boolean; lastRun?: string; councils: string[] }[] }>('GET', '/agents', undefined, 1500)
 }
 
+/**
+ * Stop the running daemon and wait for its process to exit. `/stop` only schedules the shutdown, and that shutdown closes
+ * the IPC socket (unlinking its path), frees the control port and deletes the port file: a daemon started before the old one
+ * is gone would lose all three to it. 'none' when no daemon answered, 'timeout' when it outlived `ms`.
+ */
+export async function stopDaemonAndWait(ms = 15_000): Promise<'none' | 'stopped' | 'timeout'> {
+  const st = await daemonStatus().catch(() => null)
+  if (!st) return 'none'
+  await daemonPost('/stop').catch(() => {})
+  const alive = () => {
+    try {
+      process.kill(st.pid, 0) // signal 0 only asks whether the process exists
+      return true
+    } catch {
+      return false
+    }
+  }
+  for (const end = Date.now() + ms; alive(); await new Promise((r) => setTimeout(r, 100))) if (Date.now() > end) return 'timeout'
+  return 'stopped'
+}
+
 export function daemonCall(instance: string, tool: string, args: unknown) {
   return call<{ content: { type: 'text'; text: string }[]; isError?: boolean }>('POST', '/call', { instance, tool, args })
 }
