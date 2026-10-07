@@ -1216,6 +1216,29 @@
   background: var(--madder);
   color: #fff;
 }
+/* a message banner: the whole toast is the button that opens its council */
+button.toast {
+  font-family: inherit;
+  text-align: left;
+  border: 0;
+  cursor: pointer;
+}
+button.toast:focus-visible {
+  outline: 2px solid var(--ochre);
+  outline-offset: 2px;
+}
+/* unread that includes something for me */
+.badge.at::before {
+  content: '@';
+  margin-right: 2px;
+}
+.pref-volume {
+  flex: 1;
+  accent-color: var(--ochre);
+}
+.pref-group.is-off {
+  opacity: 0.55;
+}
 @keyframes toast-in {
   from {
     transform: translateY(8px);

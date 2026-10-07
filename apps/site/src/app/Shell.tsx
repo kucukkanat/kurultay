@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { decodeLink, shortKey, type GroupState, type Kurultay, type Message, type Task } from '@kurultay/core'
-import { appUrl, devMode, getBlossom, getRelays, markRead, markThreadSeen, setBlossomPref, setDevMode, setRelaysPref, threadSeen, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
+import { appUrl, devMode, dismissToast, getBlossom, getRelays, isAttending, markRead, setOpenGroup, markThreadSeen, setBlossomPref, setDevMode, setRelaysPref, threadSeen, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
 import { watchWord } from './devmode'
 import { replyTarget, splitThreads } from './threads'
 import { Avatar, CopyField, Icon, Modal, RelayHealthBadge, timeOf } from './ui'
@@ -12,6 +12,7 @@ import { BoardPanel, escLeavesFullBoard } from './BoardPanel'
 import { CouncilKeys } from './CouncilKeys'
 import { AddAgentDialog, AgentsList, MODES, myAgents } from './agents'
 import { DaemonSection } from './DaemonPanel'
+import { NotificationSettings } from './NotificationSettings'
 import { forgetIdentity, loadIdentity, lockIdentity, nsecOf, renameIdentity } from './identity'
 import { isDark, toggleTheme } from '../shared/theme'
 
@@ -43,6 +44,10 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
   useEffect(() => {
     if (view.kind === 'group' && !e.state.groups[view.id]) setView(groups[0] ? { kind: 'group', id: groups[0].id } : { kind: 'welcome' })
   })
+
+  // alerts and the read rule need to know which council is on screen. Set while rendering, not in an effect, because the
+  // children (the sidebar badges and the council's mark-as-read effect) read it in this same pass.
+  setOpenGroup(view.kind === 'group' ? view.id : null)
 
   const go = (v: View) => {
     setView(v)
@@ -129,11 +134,18 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
       {dialog?.kind === 'join' && <JoinDialog e={e} initial={dialog.link} onClose={() => setDialog(null)} onJoined={(id) => go({ kind: 'group', id })} />}
 
       <div class="toasts" role="status" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} class={`toast ${t.level}`} data-testid="toast">
-            {t.text}
-          </div>
-        ))}
+        {toasts.map((t) => {
+          const id = t.groupId
+          return id ? (
+            <button key={t.id} type="button" class={`toast ${t.level}`} data-testid="toast" onClick={() => (dismissToast(t.id), go({ kind: 'group', id }))}>
+              {t.text}
+            </button>
+          ) : (
+            <div key={t.id} class={`toast ${t.level}`} data-testid="toast">
+              {t.text}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -146,7 +158,7 @@ function GroupList({ e, title, groups, view, go, empty }: { e: Kurultay; title: 
       <h3>{title}</h3>
       {!groups.length && <p class="side-empty">{empty}</p>}
       {groups.map((g) => {
-        const unread = view.kind === 'group' && view.id === g.id ? 0 : unreadCount(e, g.id)
+        const unread = isAttending(g.id) ? { count: 0, mentions: 0 } : unreadCount(e, g.id)
         const label = g.roster.dm ? Object.values(g.roster.members).find((m) => m.pubkey !== e.pubkey)?.name ?? g.roster.name : g.roster.name
         const online = Object.keys(g.roster.members).filter((pk) => pk !== e.pubkey && e.member(g.id, pk)?.online).length
         return (
@@ -154,7 +166,11 @@ function GroupList({ e, title, groups, view, go, empty }: { e: Kurultay; title: 
             <span class="glyph">{g.roster.dm ? '@' : '#'}</span>
             <span class="side-name">{label}</span>
             {g.roster.paused && <span title="Agents paused"><Icon name="pause" size={13} /></span>}
-            {unread > 0 ? <span class="badge hot">{unread}</span> : online > 0 ? <span class="side-online" title={`${online} online`} /> : null}
+            {unread.count > 0 ? (
+              <span class={`badge hot ${unread.mentions > 0 ? 'at' : ''}`} data-testid={`unread-${g.id}`} title={unread.mentions > 0 ? `${unread.mentions} for you` : undefined}>
+                {unread.count}
+              </span>
+            ) : online > 0 ? <span class="side-online" title={`${online} online`} /> : null}
           </button>
         )
       })}
@@ -222,7 +238,8 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
   useEffect(() => () => pending.items.forEach((p) => pending.remove(p.id)), [g.id])
 
   useEffect(() => {
-    markRead(g.id)
+    // only while the person is really looking; focus and visibility changes re-render, so coming back marks it then
+    if (isAttending(g.id)) markRead(g.id)
     const el = feed.current
     if (el && atBottom.current) el.scrollTop = el.scrollHeight
   })
@@ -912,6 +929,7 @@ function SettingsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
     <div class="page">
       <TopBar title="Settings" openNav={openNav} />
       <div class="page-body">
+        <NotificationSettings />
         <CouncilKeys e={e} />
         <section class="block">
           <h2>Relays</h2>

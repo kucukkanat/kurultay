@@ -44,6 +44,10 @@
   --toggle-w: 40px;
   --toggle-h: 24px;
   --toggle-pad: 3px;
+  /* the unread dot on the page icon; read by the app with getComputedStyle, so they follow the theme */
+  --notify-dot: var(--fire-1);
+  --notify-dot-mention: var(--madder);
+  --notify-dot-ring: var(--paper);
   color-scheme: light;
 }
 
