@@ -31,7 +31,7 @@ interface Run extends Opts {
   args: string[]
 }
 
-interface Step {
+export interface Step {
   what: string
   path?: string
   status: 'written' | 'unchanged' | 'printed' | 'manual' | 'skipped'
@@ -87,6 +87,9 @@ function mergeJson(path: string, key: string, entry: unknown, o: Opts, extra?: (
   return { what: 'MCP server', path, status: 'written' }
 }
 
+// an existing [mcp_servers.kurultay] table, up to the next table header or the end
+const CODEX_TABLE = /^\[mcp_servers\.kurultay\][\s\S]*?(?=^\[(?!mcp_servers\.kurultay\.)|(?![\s\S]))/m
+
 function codexToml(o: Run): Step {
   const path = o.project ? join(o.cwd, '.codex/config.toml') : join(o.home, '.codex/config.toml')
   const block = [
@@ -100,9 +103,7 @@ function codexToml(o: Run): Step {
   ].join('\n')
   if (o.print) return { what: 'MCP server', path, status: 'printed', detail: block }
   const current = existsSync(path) ? readFileSync(path, 'utf8') : ''
-  // replace an existing [mcp_servers.kurultay] table (up to the next table header) or append
-  const re = /^\[mcp_servers\.kurultay\][\s\S]*?(?=^\[(?!mcp_servers\.kurultay\.)|(?![\s\S]))/m
-  const next = re.test(current) ? current.replace(re, block) : (current && !current.endsWith('\n') ? current + '\n' : current) + (current ? '\n' : '') + block
+  const next = CODEX_TABLE.test(current) ? current.replace(CODEX_TABLE, block) : (current && !current.endsWith('\n') ? current + '\n' : current) + (current ? '\n' : '') + block
   if (next === current) return { what: 'MCP server', path, status: 'unchanged' }
   writeFile(path, next)
   return { what: 'MCP server', path, status: 'written' }
@@ -242,7 +243,57 @@ function installForInner(host: Host, o: Run): Step[] {
   return steps
 }
 
-const LABEL: Record<Host, string> = {
+/** User-level JSON configs installFor writes (vscode is per project, so join never writes it). */
+const USER_JSON: Partial<Record<Host, { file: string; key: string }>> = {
+  copilot: { file: '.copilot/mcp-config.json', key: 'mcpServers' },
+  pi: { file: '.pi/agent/mcp.json', key: 'mcpServers' },
+  opencode: { file: '.config/opencode/opencode.json', key: 'mcp' },
+  cursor: { file: '.cursor/mcp.json', key: 'mcpServers' },
+  gemini: { file: '.gemini/settings.json', key: 'mcpServers' },
+}
+
+/** The inverse of a user-level installFor: remove the kurultay entry and skill, and leave everything else as it was. */
+export function uninstallFor(host: Host, home = userHome()): Step[] {
+  const steps: Step[] = []
+  const json = USER_JSON[host]
+  const jsonPath = json && join(home, json.file)
+  if (json && jsonPath && existsSync(jsonPath)) {
+    try {
+      const doc = readJson(jsonPath)
+      const { kurultay, ...rest } = doc[json.key] ?? {}
+      if (kurultay !== undefined) {
+        writeFile(jsonPath, JSON.stringify({ ...doc, [json.key]: rest }, null, 2) + '\n')
+        steps.push({ what: 'MCP server', path: jsonPath, status: 'written' })
+      }
+    } catch (err) {
+      steps.push({ what: 'MCP server', path: jsonPath, status: 'manual', detail: `${(err as Error).message}\nRemove the "kurultay" entry by hand.` })
+    }
+  }
+  const toml = join(home, '.codex/config.toml')
+  const current = host === 'codex' && existsSync(toml) ? readFileSync(toml, 'utf8') : ''
+  if (CODEX_TABLE.test(current)) {
+    writeFile(toml, current.replace(CODEX_TABLE, '').replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '\n'))
+    steps.push({ what: 'MCP server', path: toml, status: 'written' })
+  }
+  // only run the claude CLI when its config names kurultay, so uninstall never touches an unrelated setup
+  const claudeJson = join(home, '.claude.json')
+  if (host === 'claude' && existsSync(claudeJson) && readFileSync(claudeJson, 'utf8').includes('"kurultay"')) {
+    const r = spawnSync('claude', ['mcp', 'remove', 'kurultay', '--scope', 'user'], { encoding: 'utf8' })
+    steps.push(r.status === 0 ? { what: 'MCP server', status: 'written', detail: 'Claude Code user scope' } : { what: 'MCP server', status: 'manual', detail: 'Run: claude mcp remove kurultay --scope user' })
+  }
+  // a marketplace plugin is the user's own choice to keep or drop: say how, don't do it
+  if (host === 'claude' && claudePluginInstalled(home)) steps.push({ what: 'plugin', status: 'manual', detail: 'Remove the plugin too, if you no longer want it:\n  claude plugin uninstall kurultay@kurultay' })
+  const user: Opts = { project: false, print: false, skill: true, cwd: home, home }
+  const skill = skillPath(host, user)
+  if (skill && existsSync(dirname(skill))) {
+    rmSync(dirname(skill), { recursive: true, force: true })
+    steps.push({ what: 'skill', path: dirname(skill), status: 'written' })
+  }
+  removeLegacySharedSkill(user)
+  return steps
+}
+
+export const LABEL: Record<Host, string> = {
   claude: 'Claude Code',
   codex: 'Codex CLI',
   copilot: 'GitHub Copilot CLI',

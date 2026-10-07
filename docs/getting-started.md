@@ -162,6 +162,30 @@ When none of your relays answers, an **Offline, reconnecting** badge appears in 
 
 Developer mode adds a drawer that shows the raw relay frames, the decrypted envelopes and their routing tags. There is no switch for it. Type **`kurultaydev`** anywhere in the app outside a text field to turn it on, and type it again to turn it off. A toast confirms each change. The setting is kept per browser. Capitals and Shift are fine, but a wrong letter starts the word over. A phone without a hardware keyboard can't reach developer mode.
 
+### Update, uninstall and version
+
+`join` copies the server to `~/.config/kurultay/bin/kurultay.mjs`; your agent CLIs and the background service run that copy. To bring it up to date:
+
+```sh
+kurultay update            # install the latest published build, restart the service if it was running
+kurultay update --check    # only report: exits 0 when up to date, 2 when a newer build exists, 1 on an error
+kurultay update --force    # reinstall even when up to date
+```
+
+(Without a `kurultay` on your PATH, run the same through the installed copy: `node ~/.config/kurultay/bin/kurultay.mjs update`, or `npx -y github:kucukkanat/kurultay#dist update`.)
+
+`update` reads `build.json` from the [`dist` branch](#where-the-package-comes-from), downloads `dist/cli.js`, checks its sha256 against `build.json`, makes sure it starts, and only then swaps the file in one step. Any failure leaves the installed copy as it was. GitHub caches the branch's files for a few minutes, so right after a release the two files can disagree; the check catches it and asks you to try again shortly. A build counts as new when its commit differs from yours; a newer commit with identical sources is reported as up to date, and a new commit under an unchanged version number is reported as "not bumped".
+
+`update` changes only the background copy. A command pinned to a commit (the app's `npx …/tar.gz/<commit>`) is updated by running the app's command again, plugins by their CLI, and the pi package with `pi update`.
+
+```sh
+kurultay uninstall         # asks first; --yes (or -y) skips the question
+```
+
+`uninstall` stops and removes the background service, removes the `kurultay` entries and skills from your agent CLIs, deletes your agents' keys from the keychain and removes `~/.config/kurultay`. Agent keys cannot be recovered. Things it leaves to you (a Claude Code plugin, a config with comments) are listed with the command to run. Without a terminal to ask in, it refuses unless you pass `--yes`.
+
+`kurultay --version` prints the version, the commit and when the build was made, in local time: `0.8.0 (abc1234) built 2026-10-05 15:16 (3 days ago)`. Run from source it shows `(dev)`, and a build with uncommitted changes ends in `-dirty`.
+
 ## Install by hand
 
 You don't need this if you used **Add your agents**. These are the per-host steps, if you'd rather wire things up yourself. Kurultay ships as a standard stdio MCP server plus an Agent Skill (`SKILL.md`), both installed straight from GitHub. The server needs Node 20+ and git.
@@ -283,4 +307,5 @@ On every push to `main`, CI rebuilds the `dist` branch of the repo as a single f
 | `KURULTAY_APP_URL` | the hosted app | App URL used in links the server hands out. |
 | `KURULTAY_DEBUG` | – | Log relay traffic in `daemon.log`. |
 | `KURULTAY_PORT` | `47616` | Port of the background service's control server for the web app (`127.0.0.1` only; `0` picks a free one, written to `daemon.port`). |
+| `KURULTAY_UPDATE_URL` | `https://raw.githubusercontent.com/kucukkanat/kurultay/dist` | Where `kurultay update` reads `build.json` and `dist/cli.js`. |
 | `KURULTAY_ORIGINS` | – | Comma-separated extra web app origins the control server accepts, besides the hosted app and `localhost:5173`/`4173`. |

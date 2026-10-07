@@ -6,6 +6,8 @@ OUT="${1:-out}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 rm -rf "$OUT" && mkdir -p "$OUT/dist" "$OUT/pi" "$OUT/skills/kurultay"
 cp "$ROOT/packages/mcp/dist/cli.js" "$OUT/dist/cli.js"
+# `kurultay update` reads build.json at the branch root (version, commit, source hash, sha256 of dist/cli.js); npx doesn't need it
+cp "$ROOT/packages/mcp/dist/build.json" "$OUT/build.json"
 # the sandbox's helper programs (Linux seccomp filter, Windows srt-win.exe) must sit beside cli.js; see docs/sandbox.md
 if [ ! -d "$ROOT/packages/mcp/dist/vendor" ]; then echo "packages/mcp/dist/vendor is missing: run the mcp build first" >&2; exit 1; fi
 cp -R "$ROOT/packages/mcp/dist/vendor" "$OUT/dist/vendor"

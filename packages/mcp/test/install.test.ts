@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { installFor, detectHosts } from '../src/install'
+import { installFor, detectHosts, uninstallFor } from '../src/install'
 
 const fresh = () => mkdtempSync(join(tmpdir(), 'kurultay-install-'))
 
@@ -73,4 +73,39 @@ test('legacy shared skill copy is removed so hosts never see it twice', () => {
   installFor('opencode', { home })
   expect(existsSync(join(home, '.agents/skills/kurultay'))).toBe(false)
   expect(existsSync(join(home, '.config/opencode/skills/kurultay/SKILL.md'))).toBe(true)
+})
+
+test('uninstallFor reverses installFor and keeps unrelated settings', () => {
+  const home = fresh()
+  mkdirSync(join(home, '.codex'))
+  writeFileSync(join(home, '.codex/config.toml'), 'model = "x"\n\n[mcp_servers.other]\ncommand = "a"\n')
+  mkdirSync(join(home, '.gemini'))
+  writeFileSync(join(home, '.gemini/settings.json'), JSON.stringify({ theme: 'dark', mcpServers: { other: { command: 'a' } } }))
+  const hosts = ['codex', 'copilot', 'pi', 'opencode', 'cursor', 'gemini'] as const
+  for (const h of hosts) installFor(h, { home })
+  for (const h of hosts) expect(uninstallFor(h, home).every((s) => s.status === 'written')).toBe(true)
+  expect(readFileSync(join(home, '.codex/config.toml'), 'utf8')).toBe('model = "x"\n\n[mcp_servers.other]\ncommand = "a"\n')
+  expect(JSON.parse(readFileSync(join(home, '.gemini/settings.json'), 'utf8'))).toEqual({ theme: 'dark', mcpServers: { other: { command: 'a' } } })
+  expect(JSON.parse(readFileSync(join(home, '.config/opencode/opencode.json'), 'utf8')).mcp).toEqual({})
+  for (const d of ['.codex/skills', '.copilot/skills', '.pi/agent/skills', '.config/opencode/skills']) expect(existsSync(join(home, d, 'kurultay'))).toBe(false)
+  // a second run has nothing left to remove
+  for (const h of hosts) expect(uninstallFor(h, home)).toEqual([])
+})
+
+test('uninstallFor leaves a Claude plugin to the user and never runs the claude CLI without a kurultay entry', () => {
+  const home = fresh()
+  mkdirSync(join(home, '.claude/skills/kurultay'), { recursive: true })
+  mkdirSync(join(home, '.claude/plugins'), { recursive: true })
+  writeFileSync(join(home, '.claude/plugins/installed_plugins.json'), '{"plugins":{"kurultay@kurultay":[]}}')
+  const steps = uninstallFor('claude', home)
+  expect(steps.map((s) => [s.what, s.status])).toEqual([['plugin', 'manual'], ['skill', 'written']])
+  expect(steps[0]?.detail).toContain('claude plugin uninstall kurultay@kurultay')
+  expect(existsSync(join(home, '.claude/skills/kurultay'))).toBe(false)
+})
+
+test('uninstallFor reports JSONC configs as manual', () => {
+  const home = fresh()
+  mkdirSync(join(home, '.cursor'))
+  writeFileSync(join(home, '.cursor/mcp.json'), '{ // c\n "mcpServers": { "kurultay": {} } }')
+  expect(uninstallFor('cursor', home)[0]?.status).toBe('manual')
 })

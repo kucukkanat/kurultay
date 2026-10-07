@@ -2,12 +2,14 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { readFileSync } from 'node:fs'
 import { WebSocket as WsWebSocket } from 'ws'
-import { createServer, VERSION } from './server'
+import { createServer } from './server'
 import { runInstall } from './install'
 import { runJoin } from './join'
 import { runDaemon } from './daemon'
 import { daemonLog, stopService } from './service'
 import { daemonGet, daemonPost, daemonStatus } from './ipc'
+import { buildStamp, runUninstall, runUpdate } from './selfmanage'
+import { versionDetail, versionLine } from './version'
 
 async function ensureWebSocket() {
   if (typeof (globalThis as any).WebSocket === 'undefined') {
@@ -15,7 +17,7 @@ async function ensureWebSocket() {
   }
 }
 
-const HELP = `kurultay ${VERSION} — encrypted, ephemeral agent-to-agent councils over Nostr
+const HELP = `kurultay ${versionLine()} — encrypted, ephemeral agent-to-agent councils over Nostr
 
 Usage: kurultay <command> [options]
 
@@ -46,13 +48,21 @@ Sandbox (keeps background answers to the working folder and the websites you all
   sandbox setup [--yes]       Windows: the one-time setup (one administrator prompt; --yes skips the question).
                               Linux needs bubblewrap, socat and ripgrep; macOS needs nothing
 
+Update and remove
+  update                      Install the latest published build into the background copy (restarts the service if running)
+      --check                 only report; exits 2 when a newer build exists
+      --force                 reinstall even when up to date
+  uninstall                   Remove the service, the kurultay entries and skills in your agent CLIs, agent keys and the
+                              config folder. Asks first
+      --yes, -y               don't ask
+
 MCP server
   mcp [--host <host>]         Serve MCP over stdio; what agent CLIs launch. --host picks the identity
                               "join" set up for that CLI
 
 Other
   help, --help, -h            Show this help (also: kurultay <command> --help)
-  --version, -v               Print the version
+  --version, -v, version      Print the version, the commit and when it was built
 
 Environment
   KURULTAY_RELAYS         comma-separated relay URLs (default: damus, primal, nostr.mom)
@@ -72,12 +82,15 @@ Environment
   KURULTAY_DEBUG          log relay traffic in the service log
   KURULTAY_PORT           port of the service's local control server for the web app (default 47616; 0 picks one)
   KURULTAY_ORIGINS        comma-separated extra web app origins the control server accepts
+  KURULTAY_UPDATE_URL     where update reads build.json and dist/cli.js (default: the dist branch on raw.githubusercontent.com)
 
 Docs: https://kucukkanat.github.io/kurultay/docs/`
 
 async function main() {
   const cmd = process.argv[2]
-  if (cmd === '--version' || cmd === '-v') return console.log(VERSION)
+  if (cmd === '--version' || cmd === '-v' || cmd === 'version') return console.log(versionDetail())
+  // hidden: `update` asks the installed copy for its stamp this way (selfmanage.ts)
+  if (cmd === '__build') return console.log(JSON.stringify(buildStamp()))
   // hidden: the daemon re-enters this bundle to run one sandboxed turn (sandbox/exec.ts), never typed by hand
   if (cmd === '__sandbox') {
     const { sandboxMain } = await import('./sandbox/exec')
@@ -86,6 +99,14 @@ async function main() {
   const wantsHelp = process.argv.slice(3).some((a) => a === '--help' || a === '-h')
   // join and install print their own usage; every other command shows the full help
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h' || (wantsHelp && cmd !== 'join' && cmd !== 'install')) return console.log(HELP)
+  if (cmd === 'update') {
+    process.exitCode = await runUpdate(process.argv.slice(3))
+    return
+  }
+  if (cmd === 'uninstall') {
+    process.exitCode = await runUninstall(process.argv.slice(3))
+    return
+  }
   if (cmd === 'join') {
     await ensureWebSocket()
     process.exitCode = await runJoin(process.argv.slice(3))
