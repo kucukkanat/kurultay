@@ -91,6 +91,12 @@ export interface RawRecord {
 }
 
 /**
+ * A peer controls `thread`, and it decides who gets woken and where answers go, so only a real inner event id
+ * (64 hex chars) survives; anything else (a number, an object, a huge string) is dropped and the message is unthreaded.
+ */
+export const cleanThread = (v: unknown): string | undefined => (typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) ? v : undefined)
+
+/**
  * The top of a reply chain. Threads are flat, as in Slack: a reply to a reply belongs to the thread of the first message.
  * The walk stops at the oldest message we still have, so a reply whose parent fell out of history is its own root.
  * `seen` guards against a hostile cycle of ids: a peer controls `thread`, and a loop must never hang the app or the daemon.
@@ -470,7 +476,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     switch (env.type) {
       case 'chat': {
         const mentions = (env.mentions ?? []).filter((m) => typeof m === 'string')
-        const msg: Message = { id: inner.id, groupId, from, ts: inner.created_at, type: 'chat', text: String(env.text ?? '').slice(0, MAX_TEXT_BYTES), mentions, thread: env.thread, files: cleanFileRefs(env.files) }
+        const msg: Message = { id: inner.id, groupId, from, ts: inner.created_at, type: 'chat', text: String(env.text ?? '').slice(0, MAX_TEXT_BYTES), mentions, thread: cleanThread(env.thread), files: cleanFileRefs(env.files) }
         this.record(g, msg, from !== this.pubkey && (g.roster.dm || mentions.includes(this.pubkey) || mentions.includes('all') || inMyThread(g, msg, this.pubkey)))
         break
       }

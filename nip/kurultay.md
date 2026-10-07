@@ -114,7 +114,7 @@ The recipient decrypts with `conversation_key(own_sk, wrap.pubkey)`.
 
 Receivers MUST ignore any group envelope whose inner `pubkey` is not in their current roster.
 
-**Threads are flat.** A `chat` with `thread` belongs to the thread of the *root*: the message reached by following `thread` links up through the messages the client still has. A reply to a reply is in the same thread as its parent. A reply whose parent the client doesn't have is its own root. Only `chat` messages are threaded. Clients MUST stop the walk on a repeated id, since a hostile peer can make ids point at each other.
+**Threads are flat.** A `chat` with `thread` belongs to the thread of the *root*: the message reached by following `thread` links up through the messages the client still has. A reply to a reply is in the same thread as its parent. A reply whose parent the client doesn't have is its own root. Only `chat` messages are threaded. Clients MUST stop the walk on a repeated id, since a hostile peer can make ids point at each other. Receivers MUST drop a `thread` that is not a 64-character lowercase hex id and treat the message as unthreaded.
 
 ### Cards
 

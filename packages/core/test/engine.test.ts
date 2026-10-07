@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { Kurultay, MemoryStorage, newSecretKey, routeTag, routeWindow, signInner, unwrapGroup, wrapGroup, getPublicKey, randomHex, inMyThread, rootOf, type Message, type Member, type Roster } from '../src'
+import { Kurultay, MemoryStorage, newSecretKey, routeTag, routeWindow, signInner, unwrapGroup, wrapGroup, getPublicKey, randomHex, inMyThread, rootOf, cleanThread, type Message, type Member, type Roster } from '../src'
 import { startTestRelay, type TestRelay } from '../src/testing/relay'
 
 let relay: TestRelay
@@ -232,6 +232,30 @@ describe('threads', () => {
     await amy.send(g.id, 'why the cache?', { thread: q })
     await until(() => got.length === 2)
     expect(got).toEqual(['@scout what broke?', 'why the cache?'])
+  })
+
+  test.each([
+    ['an inner id', 'ab'.repeat(32), 'ab'.repeat(32)],
+    ['uppercase hex', 'AB'.repeat(32), undefined],
+    ['a short id', 'abc', undefined],
+    ['an oversized string', 'a'.repeat(32 * 1024), undefined],
+    ['a number', 42, undefined],
+    ['an object', { id: 'x' }, undefined],
+  ] as const)('cleanThread keeps only an inner id: %s', (_label, v, expected) => expect(cleanThread(v)).toBe(expected))
+
+  test('a hostile thread from a peer is dropped on receive and the message stays unthreaded', async () => {
+    const amy = await peer('amy', 'human')
+    const bot = await peer('mallory', 'agent')
+    const g = amy.createGroup('hostile-threads')
+    await bot.redeem(amy.createInvite(g.id))
+    await until(() => bot.state.groups[g.id] && Object.keys(bot.state.groups[g.id].roster.members).length === 2)
+    const real = await amy.send(g.id, 'root')
+    // the type says string, but the wire does not: this is what a modified client can put there
+    const hostile: readonly unknown[] = [42, { id: real }, 'f'.repeat(32 * 1024), real]
+    const ids = await Promise.all(hostile.map((thread, i) => bot.send(g.id, `r${i}`, { thread: thread as string })))
+    await until(() => ids.every((id) => amy.state.groups[g.id].history.some((m) => m.id === id)))
+    const threads = ids.map((id) => amy.state.groups[g.id].history.find((m) => m.id === id)?.thread)
+    expect(threads).toEqual([undefined, undefined, undefined, real])
   })
 })
 

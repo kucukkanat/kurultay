@@ -22,6 +22,10 @@ const byId = <T extends HTMLElement = HTMLElement>(id: string, root: ParentNode 
 }
 const settle = () => new Promise((r) => setTimeout(r, 30))
 const BOT = 'b'.repeat(64)
+// real-shaped inner ids: the engine drops a `thread` that is not one, also on my own echo
+const Q = '1'.repeat(64)
+const A1 = '2'.repeat(64)
+const A2 = '3'.repeat(64)
 
 /** Me in a council where I asked something and an agent answered in the thread. */
 async function council() {
@@ -29,11 +33,11 @@ async function council() {
   engines.push(e)
   const g = e.createGroup('ops')
   const chat = (id: string, from: string, thread?: string): Message => ({ id, groupId: g.id, from, ts: 1_700_000_000, type: 'chat', text: `msg ${id}`, thread })
-  g.history.push(chat('q', e.pubkey), chat('a1', BOT, 'q'), chat('a2', e.pubkey, 'a1'))
+  g.history.push(chat(Q, e.pubkey), chat(A1, BOT, Q), chat(A2, e.pubkey, A1))
   const { splitThreads } = await import('./threads')
   const root = document.body.appendChild(document.createElement('div'))
   const { feed, replies } = splitThreads(g.history)
-  const question = feed.find((m) => m.id === 'q')
+  const question = feed.find((m) => m.id === Q)
   if (!question) throw new Error('the question should be in the main chat')
   return { e, g, root, question, replies }
 }
@@ -44,16 +48,16 @@ test('the chat shows how many replies a message has and how many are new', async
   const { markThreadSeen } = await import('./store')
   const { e, g, root, question, replies } = await council()
   const opened: string[] = []
-  const draw = () => render(<MessageRow e={e} g={g} m={question} names={new Set()} replies={replies.get('q')} onThread={(id) => opened.push(id)} />, root)
+  const draw = () => render(<MessageRow e={e} g={g} m={question} names={new Set()} replies={replies.get(Q)} onThread={(id) => opened.push(id)} />, root)
   draw()
   expect(byId('thread-link', root).textContent).toContain('2 replies')
   expect(byId('thread-new', root).textContent).toBe('2 new')
-  markThreadSeen('q', 2)
+  markThreadSeen(Q, 2)
   draw()
   expect(root.querySelector('[data-testid="thread-new"]')).toBeNull()
   byId('reply-button', root).click()
   byId('thread-link', root).click()
-  expect(opened).toEqual(['q', 'q'])
+  expect(opened).toEqual([Q, Q])
   render(null, root)
 })
 
@@ -62,7 +66,7 @@ test('a reply typed in the thread panel answers the newest message from someone 
   const { ThreadPanel } = await import('./Shell')
   const { e, g, root, question, replies } = await council()
   let closed = false
-  render(<ThreadPanel e={e} g={g} root={question} replies={replies.get('q') ?? []} names={new Set()} close={() => (closed = true)} />, root)
+  render(<ThreadPanel e={e} g={g} root={question} replies={replies.get(Q) ?? []} names={new Set()} close={() => (closed = true)} />, root)
   await settle()
   const panel = byId('thread-panel', root)
   expect(panel.textContent).toContain('2 replies')
@@ -79,7 +83,7 @@ test('a reply typed in the thread panel answers the newest message from someone 
   await settle()
   const sent = g.history[g.history.length - 1]
   expect(sent?.text).toBe('thanks')
-  expect(sent?.thread).toBe('a1')
+  expect(sent?.thread).toBe(A1)
   byId('thread-close', root).click()
   expect(closed).toBe(true)
   render(null, root)
