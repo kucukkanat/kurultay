@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Kurultay, MemoryStorage, newSecretKey } from '@kurultay/core'
@@ -7,7 +7,8 @@ import { startTestBlossom, startTestRelay } from '@kurultay/core/testing'
 
 const relay = startTestRelay(0)
 const blossom = startTestBlossom(0)
-const home = mkdtempSync(join(tmpdir(), 'kurultay-daemon-'))
+// realpath: on macOS tmpdir() is under /var, a symlink to /private/var, and the CLI reports its resolved process.cwd()
+const home = realpathSync(mkdtempSync(join(tmpdir(), 'kurultay-daemon-')))
 const bin = join(home, 'bin')
 const work = join(home, 'project')
 mkdirSync(bin)
