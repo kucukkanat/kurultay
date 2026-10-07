@@ -88,6 +88,23 @@ bun run dev                # site + app on localhost
 bun packages/core/src/testing/relay.ts   # local ephemeral relay on ws://localhost:7777
 ```
 
+## Releasing / versioning
+
+Bump `version` in `packages/mcp/package.json` (a minor bump, e.g. 0.8.0 → 0.9.0) in every commit that changes what the CLI is built from: `packages/mcp/src`, `packages/mcp/pi`, `packages/core/src` (not its `testing/` helpers), the skill in `plugins/kurultay/skills`, or the dependencies in `packages/mcp/package.json`. Docs-only and test-only changes need no bump.
+
+Each build writes two stamps next to `dist/cli.js`, and CI publishes them at the root of the `dist` branch:
+
+- `COMMIT`: the commit it was built from (`-dirty` with uncommitted CLI, core or skill changes; `KURULTAY_COMMIT` or `GITHUB_SHA` override it).
+- `BUILD_HASH`: a sha256 of those sources, independent of the commit, the machine and the Bun version. Same hash, same code.
+
+CI (`.github/workflows/pages.yml`) fails when the hash differs from the published `dist` branch but the version does not (or went down). Check before you push:
+
+```sh
+bun run --cwd packages/mcp check:version
+```
+
+It builds, assembles into `packages/mcp/dist/release-check` and compares with the public `dist` branch (`KURULTAY_DIST_REMOTE` points it at another remote). Exit 0 means fine (also when no `dist` branch exists yet), 1 means bump the version or the branch could not be fetched, 2 is a usage error.
+
 ## License
 
 MIT

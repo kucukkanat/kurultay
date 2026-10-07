@@ -29,6 +29,9 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap socat ripgrep
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - run: bun run test
+      # version-bump guard: fails when the CLI, core or skill sources changed since the published `dist` branch but
+      # packages/mcp's version did not (docs- and test-only changes keep the build hash, so they pass)
+      - run: bun run --cwd packages/mcp check:version
 
   # Publishes the bundled MCP server to the `dist` branch so agents can run
   #   npx -y github:kucukkanat/kurultay#dist mcp      (any MCP host)

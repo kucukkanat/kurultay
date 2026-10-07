@@ -1,18 +1,19 @@
 // Bundle the CLI into <out>/cli.js (default dist/) with a build stamp, and describe it in <out>/build.json:
 //   commit   full sha ("-dirty" with uncommitted CLI, core or skill changes). KURULTAY_COMMIT or GITHUB_SHA override it
-//   hash     sha256 of the sources the bundle is made of (CLI, core, skill, package.json minus its version). Hashing sources,
-//            not the bundle, keeps it the same across machines and Bun versions, so `update` can tell "only docs moved"
+//   hash     sha256 of the sources the bundle is made of (scripts/version-drift.ts). Hashing sources, not the bundle, keeps it
+//            the same across machines and Bun versions, so `update` can tell "only docs moved" and CI can tell "bump the version"
 //   builtAt  ISO time; KURULTAY_BUILT_AT pins it (tests)
 //   sha256   of cli.js, so `kurultay update` can check what it downloaded
-// CI copies build.json to the root of the `dist` branch (scripts/assemble-dist.sh).
+// It also writes <out>/COMMIT and <out>/BUILD_HASH (one line each) for scripts/check-version.ts, the version-bump guard.
+// CI copies build.json, COMMIT and BUILD_HASH to the root of the `dist` branch (scripts/assemble-dist.sh).
 import { createHash } from 'node:crypto'
-import { chmodSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+import { repoSourceHash } from './version-drift'
 
 const root = resolve(import.meta.dir, '..')
 const repo = resolve(root, '../..')
 const out = resolve(process.argv[2] ?? join(root, 'dist'))
-const SKILL = 'plugins/kurultay/skills/kurultay/SKILL.md'
 
 const git = (...args: string[]) => {
   const r = Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
@@ -27,21 +28,8 @@ function commit(): string {
   return git('status', '--porcelain', '--', 'packages/mcp', 'packages/core', 'plugins/kurultay/skills') ? `${sha}-dirty` : sha
 }
 
-const filesIn = (dir: string): string[] =>
-  (readdirSync(join(repo, dir), { recursive: true, encoding: 'utf8' }) as string[]).filter((f) => statSync(join(repo, dir, f)).isFile()).map((f) => join(dir, f))
-
-/** The version is left out: bumping it must not look like a code change. */
-function sourceHash(): string {
-  const h = createHash('sha256')
-  for (const f of [...filesIn('packages/mcp/src'), ...filesIn('packages/core/src'), SKILL].sort()) h.update(f).update('\0').update(readFileSync(join(repo, f))).update('\0')
-  const { version: _version, ...pkg }: Record<string, unknown> = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-  h.update(JSON.stringify(pkg))
-  // the prefix names how the hash is made, so hashes made differently are never compared
-  return `src1:${h.digest('hex')}`
-}
-
 const sha = commit()
-const hash = sourceHash()
+const hash = repoSourceHash(repo)
 const builtAt = process.env.KURULTAY_BUILT_AT ?? new Date().toISOString()
 const built = await Bun.build({
   entrypoints: [join(root, 'src/cli.ts')],
@@ -64,4 +52,6 @@ chmodSync(cli, 0o755)
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const sha256 = createHash('sha256').update(readFileSync(cli)).digest('hex')
 writeFileSync(join(out, 'build.json'), JSON.stringify({ version, commit: sha, hash, builtAt, sha256 }, null, 2) + '\n')
+writeFileSync(join(out, 'COMMIT'), `${sha}\n`)
+writeFileSync(join(out, 'BUILD_HASH'), `${hash}\n`)
 console.log(`built ${relative(process.cwd(), cli) || cli} ${version} (${sha.replace(/^([0-9a-f]{7})[0-9a-f]+/, '$1')})`)

@@ -8,6 +8,11 @@ rm -rf "$OUT" && mkdir -p "$OUT/dist" "$OUT/pi" "$OUT/skills/kurultay"
 cp "$ROOT/packages/mcp/dist/cli.js" "$OUT/dist/cli.js"
 # `kurultay update` reads build.json at the branch root (version, commit, source hash, sha256 of dist/cli.js); npx doesn't need it
 cp "$ROOT/packages/mcp/dist/build.json" "$OUT/build.json"
+# COMMIT and BUILD_HASH let CI's version-bump guard (packages/mcp/scripts/check-version.ts) compare the next build with this one
+for f in COMMIT BUILD_HASH; do
+  if [ ! -f "$ROOT/packages/mcp/dist/$f" ]; then echo "packages/mcp/dist/$f is missing: run the mcp build first" >&2; exit 1; fi
+  cp "$ROOT/packages/mcp/dist/$f" "$OUT/$f"
+done
 # the sandbox's helper programs (Linux seccomp filter, Windows srt-win.exe) must sit beside cli.js; see docs/sandbox.md
 if [ ! -d "$ROOT/packages/mcp/dist/vendor" ]; then echo "packages/mcp/dist/vendor is missing: run the mcp build first" >&2; exit 1; fi
 cp -R "$ROOT/packages/mcp/dist/vendor" "$OUT/dist/vendor"

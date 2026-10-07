@@ -12,6 +12,7 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "bun scripts/build.ts && bun scripts/copy-vendor.ts",
+    "check:version": "bun run build && ../../scripts/assemble-dist.sh dist/release-check && bun scripts/check-version.ts dist/release-check",
     "prepublishOnly": "bun run build"
   },
   "devDependencies": {
