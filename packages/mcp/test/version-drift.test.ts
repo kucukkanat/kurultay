@@ -11,8 +11,8 @@ const repo = resolve(pkgDir, '../..')
 const tmp = mkdtempSync(join(tmpdir(), 'kurultay-version-'))
 afterAll(() => rmSync(tmp, { recursive: true, force: true }))
 
-const H1 = `src2:${'1'.repeat(64)}`
-const H2 = `src2:${'2'.repeat(64)}`
+const H1 = `src3:${'1'.repeat(64)}`
+const H2 = `src3:${'2'.repeat(64)}`
 
 describe('driftProblem', () => {
   test('same code passes, whatever the version', () => expect(driftProblem({ version: '0.8.0', buildHash: H1 }, { version: '0.8.0', buildHash: H1 })).toBeNull())
@@ -21,7 +21,7 @@ describe('driftProblem', () => {
   test('a lower version is reported as going backwards', () => expect(driftProblem({ version: '0.9.0', buildHash: H1 }, { version: '0.8.0', buildHash: H2 })).toContain('backwards'))
   test('a published build without a hash cannot be compared', () => expect(driftProblem({ version: '0.8.0' }, { version: '0.8.0', buildHash: H2 })).toBeNull())
   test('hashes made another way cannot be compared', () => expect(driftProblem({ version: '0.8.0', buildHash: 'src1:abc' }, { version: '0.8.0', buildHash: H2 })).toBeNull())
-  test('same scheme, different hash asks for a bump', () => expect(driftProblem({ version: '0.8.0', buildHash: 'src2:abc' }, { version: '0.8.0', buildHash: 'src2:abd' })).toContain('Bump'))
+  test('same scheme, different hash asks for a bump', () => expect(driftProblem({ version: '0.8.0', buildHash: 'src3:abc' }, { version: '0.8.0', buildHash: 'src3:abd' })).toContain('Bump'))
 })
 
 describe('sourceHash', () => {
@@ -33,19 +33,21 @@ describe('sourceHash', () => {
   const deps = { dependencies: { x: '1' } }
   const base = sourceHash(files, deps)
 
-  test('names its scheme and is a sha256', () => expect(base).toMatch(/^src2:[0-9a-f]{64}$/))
+  test('names its scheme and is a sha256', () => expect(base).toMatch(/^src3:[0-9a-f]{64}$/))
   test('input order does not matter', () => expect(sourceHash([...files].reverse(), deps)).toBe(base))
   test('a changed byte changes it', () => expect(sourceHash(files.map((f) => (f.path === 'b/c.ts' ? { ...f, bytes: bytes('twp') } : f)), deps)).not.toBe(base))
   test('a renamed file changes it', () => expect(sourceHash(files.map((f) => ({ ...f, path: `x/${f.path}` })), deps)).not.toBe(base))
   test('dependencies change it', () => expect(sourceHash(files, { dependencies: { x: '2' } })).not.toBe(base))
 
-  test('the repository inputs: CLI, pi, core and skill sources; no tests, docs or core testing helpers', () => {
+  test('the repository inputs: CLI, pi, core and skill sources, lockfile, build and assemble scripts; no tests, docs or core testing helpers', () => {
     const { files: inputs, pkg } = hashInputs(repo)
     const paths = inputs.map((f) => f.path)
-    for (const p of ['packages/mcp/src/cli.ts', 'packages/mcp/pi/extension.ts', 'packages/core/src/engine.ts', 'plugins/kurultay/skills/kurultay/SKILL.md']) expect(paths).toContain(p)
+    for (const p of ['packages/mcp/src/cli.ts', 'packages/mcp/pi/extension.ts', 'packages/core/src/engine.ts', 'plugins/kurultay/skills/kurultay/SKILL.md', 'bun.lock', 'packages/mcp/scripts/build.ts', 'scripts/assemble-dist.sh'])
+      expect(paths).toContain(p)
     expect(paths.filter((p) => p.includes('/test/') || p.startsWith('packages/core/src/testing/') || p.startsWith('docs/') || p.endsWith('README.md'))).toEqual([])
     // only what goes into the bundle: a version bump or a new script is not a code change
-    expect(Object.keys(pkg as object).sort()).toEqual(['dependencies', 'devDependencies'])
+    expect(Object.keys(pkg as object).sort()).toEqual(['bin', 'core', 'dependencies', 'devDependencies', 'engines'])
+    expect(pkg).toMatchObject({ core: { dependencies: { 'nostr-tools': expect.any(String), '@noble/hashes': expect.any(String) } } })
   })
 })
 
@@ -111,6 +113,6 @@ test('real builds: COMMIT follows the commit, BUILD_HASH only the sources', asyn
   const [a, b] = await Promise.all([build('build-a', 'a'.repeat(40)), build('build-b', 'b'.repeat(40))])
   expect(a.commit).toBe('a'.repeat(40))
   expect(b.commit).toBe('b'.repeat(40))
-  expect(a.hash).toMatch(/^src2:[0-9a-f]{64}$/)
+  expect(a.hash).toMatch(/^src3:[0-9a-f]{64}$/)
   expect(b.hash).toBe(a.hash)
 })

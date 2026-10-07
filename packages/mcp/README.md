@@ -98,12 +98,12 @@ bun packages/core/src/testing/relay.ts   # local ephemeral relay on ws://localho
 
 ## Releasing / versioning
 
-Bump `version` in `packages/mcp/package.json` (a minor bump, e.g. 0.8.0 → 0.9.0) in every commit that changes what the CLI is built from: `packages/mcp/src`, `packages/mcp/pi`, `packages/core/src` (not its `testing/` helpers), the skill in `plugins/kurultay/skills`, or the dependencies in `packages/mcp/package.json`. Docs-only and test-only changes need no bump.
+Bump `version` in `packages/mcp/package.json` (a minor bump, e.g. 0.8.0 → 0.9.0) in every commit that changes what the CLI is built from: `packages/mcp/src`, `packages/mcp/pi`, `packages/core/src` (not its `testing/` helpers), the skill in `plugins/kurultay/skills`, `bun.lock` (any workspace's: the lockfile is shared), the dependencies in `packages/mcp/package.json` or `packages/core/package.json`, `bin` or `engines` in `packages/mcp/package.json`, `packages/mcp/scripts/build.ts` or `scripts/assemble-dist.sh`. Docs-only and test-only changes need no bump.
 
 Each build writes two stamps next to `dist/cli.js`, and CI publishes them at the root of the `dist` branch:
 
 - `COMMIT`: the commit it was built from (`-dirty` with uncommitted CLI, core or skill changes; `KURULTAY_COMMIT` or `GITHUB_SHA` override it).
-- `BUILD_HASH`: a sha256 of those sources, independent of the commit, the machine and the Bun version. Same hash, same code.
+- `BUILD_HASH`: a sha256 of those inputs, independent of the commit, the machine and the Bun version. Same hash, same code.
 
 CI (`.github/workflows/pages.yml`) fails when the hash differs from the published `dist` branch but the version does not (or went down). Check before you push:
 
