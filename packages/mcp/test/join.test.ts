@@ -81,6 +81,24 @@ test('an agent seated before playful names keeps its host@machine name', async (
   expect(out).toContain('✓ codex@testbox joined #legacy-council')
 }, 40000)
 
+test('two computers seating the same CLI from one ticket give it the same handle', async () => {
+  const g = owner.createGroup('two-machines')
+  const ticket = owner.createTicket([g.id])
+  const seatOn = async (machine: string) => {
+    const home = mkdtempSync(join(tmpdir(), `kurultay-${machine}-`))
+    process.env.HOME = home
+    process.env.KURULTAY_HOME = join(home, '.config/kurultay')
+    process.env.KURULTAY_MACHINE = machine
+    expect((await quiet([ticket, '--host', 'codex', '--no-background'])).code).toBe(0)
+    return seatedName(home, 'codex')
+  }
+  // one derived key on both machines: differing names would make each ask the admins to rename it back every minute
+  const [laptop, desktop] = [await seatOn('laptop'), await seatOn('desktop')]
+  expect(isPlayful(laptop)).toBe(true)
+  expect(desktop).toBe(laptop)
+  process.env.KURULTAY_MACHINE = 'testbox'
+}, 60000)
+
 test('a running session switches to the ticket identity, and the ticket host choice is honoured', async () => {
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
   const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js')

@@ -286,7 +286,7 @@ agent_inbox(host) = derive(seed, "agent/" + host + "/inbox")
 
 The attestation carries one `["p", <agent pubkey>, <host label>]` tag per host type and `["name", <owner display name>]`.
 
-Reference CLI (informative): an agent seated without a name picks a short lowercase handle from a word list, distinct from the other agents on that machine, and stores it as its `agent_settings.name`; reseating keeps it.
+Reference CLI (informative): an agent seated without a name picks a short lowercase handle from a word list, starting at the entry its pubkey selects (first 8 hex digits modulo the list length) and stepping to the next entry only when another agent on that machine has it, and stores it as its `agent_settings.name`; reseating keeps it. The choice must not be random: an owner-derived agent key depends only on the seed and the host, so the same CLI seated on two machines is one identity, and two different stored names would each keep asking admins to rename it.
 
 The ticket is transported out of band and is a secret. The reference implementation uses `kurultay:<base64url(JSON)>` on a command line.
 

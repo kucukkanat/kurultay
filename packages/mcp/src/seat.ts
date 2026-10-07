@@ -68,7 +68,7 @@ export function prepare(ticket: AgentTicket, host: Host): Prepared {
   state.pk = pubkey
   // Only a fresh identity gets a playful name: reseating, or an agent seated before names existed, is never renamed.
   if (!state.agentSettings?.name && (!existing || existing.inbox !== state.inbox))
-    state.agentSettings = { mode: state.agentSettings?.mode ?? DEFAULT_AGENT_MODE, name: pickPlayfulName(namesInUse()), updatedAt: now() }
+    state.agentSettings = { mode: state.agentSettings?.mode ?? DEFAULT_AGENT_MODE, name: pickPlayfulName(pubkey, namesInUse()), updatedAt: now() }
   new FileStorage(file).save(state)
   return { host, instance, name: state.agentSettings?.name ?? displayName(instance), dir, sk, pubkey, busy }
 }

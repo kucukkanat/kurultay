@@ -11,16 +11,20 @@ export const PLAYFUL_NAMES = [
 ] as const
 
 /**
- * A playful name nobody in `taken` has, compared without case or `@machine` suffix, so `FALCON` and `falcon@box` both
- * block `falcon`. Once every plain name is used, a number is added. `random` is a seam so a test can pin the choice.
+ * A playful name for `pubkey` that nobody in `taken` has, compared without case or `@machine` suffix, so `FALCON` and
+ * `falcon@box` both block `falcon`. The start is read from the pubkey, not drawn at random: an owner's agent key is
+ * derived from their seed and the host only, so seating the same CLI on two computers yields one identity, and both
+ * machines must pick the same handle or each would keep asking the admins to rename it back to its own. A local
+ * collision steps to the next free entry; once every plain name is used, a number is added.
  */
-export function pickPlayfulName(taken: Iterable<string> = [], random: () => number = Math.random): string {
+export function pickPlayfulName(pubkey: string, taken: Iterable<string> = []): string {
   const used = new Set([...taken].map((n) => n.toLowerCase().replace(/@.*$/, '')))
-  const pick = (list: readonly string[]) => list[Math.min(list.length - 1, Math.floor(random() * list.length))]
-  const free = PLAYFUL_NAMES.filter((n) => !used.has(n))
-  if (free.length) return pick(free)
+  const start = (Number.parseInt(pubkey.slice(0, 8), 16) || 0) % PLAYFUL_NAMES.length
+  const ordered = PLAYFUL_NAMES.map((_, i) => PLAYFUL_NAMES[(start + i) % PLAYFUL_NAMES.length])
+  const free = ordered.find((n) => !used.has(n))
+  if (free) return free
   for (let i = 2; ; i++) {
-    const candidate = `${pick(PLAYFUL_NAMES)}-${i}`
+    const candidate = `${ordered[0]}-${i}`
     if (!used.has(candidate)) return candidate
   }
 }
