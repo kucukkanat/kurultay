@@ -162,3 +162,9 @@ export function deriveAgent(seedHex: string, host: string): { sk: Uint8Array; pk
   const sk = derive(seedHex, `agent/${host}/key`)
   return { sk, pk: getPublicKey(sk), inbox: bytesToHex(derive(seedHex, `agent/${host}/inbox`)) }
 }
+
+/** Short fingerprint of an agent's picture and instructions: the agent reports it so its owner can spot a stale copy without echoing 16 KB back. */
+export function profileRev(avatar?: string, instructions?: string): string {
+  if (!avatar && !instructions) return ''
+  return bytesToHex(sha256(utf8(JSON.stringify([avatar ?? '', instructions ?? ''])))).slice(0, 12)
+}

@@ -1,0 +1,3 @@
+# the site's TSX (preact) is rendered in its DOM tests; Bun reads JSX settings from here, not from apps/site/tsconfig.json
+jsx = "react-jsx"
+jsxImportSource = "preact"

@@ -4,6 +4,7 @@ import {
   deriveAgent,
   checkAttestation,
   getPublicKey,
+  profileRev,
   routeWindow,
   signInner,
   slotOf,
@@ -22,6 +23,8 @@ import {
   KIND_WRAP,
   AGENT_HOSTS,
   DEFAULT_AGENT_MODE,
+  cleanAvatar,
+  cleanInstructions,
   cleanName,
   type AgentMode,
   type AgentStatus,
@@ -136,6 +139,15 @@ export function emptyState(): State {
 
 export class KurultayError extends Error {}
 
+/** Peers' cards are untrusted: a picture that is not a small raster data URL (javascript:, tracking https:, SVG) is dropped. */
+const safeCard = (card: Card): Card => ({ ...card, avatar: cleanAvatar(card.avatar) })
+
+/** A copy of `table` with `key` set to `value`, or removed when `value` is undefined. */
+const withEntry = (table: Record<string, string> | undefined, key: string, value: string | undefined): Record<string, string> => {
+  const { [key]: _old, ...rest } = table ?? {}
+  return value === undefined ? rest : { ...rest, [key]: value }
+}
+
 export class Kurultay extends Emitter<EngineEvents> {
   readonly pubkey: string
   readonly sk: Uint8Array
@@ -210,6 +222,7 @@ export class Kurultay extends Emitter<EngineEvents> {
       this.name = this.state.agentSettings.name
       this.card = { ...this.card, name: this.name }
     }
+    if (this.state.agentSettings?.avatar) this.card = { ...this.card, avatar: this.state.agentSettings.avatar }
     this.persist()
     this.pool.setRelays(this.allRelays())
     this.resubscribe()
@@ -437,7 +450,7 @@ export class Kurultay extends Emitter<EngineEvents> {
       }
       case 'presence':
         if (env.status === 'offline') delete g.presence[from]
-        if (env.card) g.cards[from] = { ...env.card, kind: member.kind }
+        if (env.card) g.cards[from] = { ...safeCard(env.card), kind: member.kind }
         if (env.attestation && checkAttestation(env.attestation, from) && !member.attestation) {
           member.attestation = env.attestation
           member.owner = env.attestation.pubkey
@@ -481,10 +494,16 @@ export class Kurultay extends Emitter<EngineEvents> {
       case 'agent_settings': {
         if (!this.state.owner || from !== this.state.owner.pubkey) return
         const name = env.name ? cleanName(env.name) ?? undefined : this.state.agentSettings?.name
-        this.state.agentSettings = { mode: env.mode, name, updatedAt: now() }
+        const avatar = cleanAvatar(env.avatar)
+        const pictureChanged = avatar !== this.state.agentSettings?.avatar
+        this.state.agentSettings = { mode: env.mode, name, avatar, instructions: cleanInstructions(env.instructions), updatedAt: now() }
         this.emit('settings', { mode: env.mode })
         this.changed('settings')
+        // the picture rides in the card every council sees; without one, apps fall back to the generated avatar.
+        // It goes into the card before the rename beacons, so councils never get a card with the new name and the old picture.
+        if (pictureChanged) this.card = { ...this.card, avatar }
         if (name && name !== this.name) this.useName(name)
+        else if (pictureChanged) this.beacon()
         return
       }
       case 'rename': {
@@ -501,7 +520,8 @@ export class Kurultay extends Emitter<EngineEvents> {
         // the agent came online with an older setting than the one I chose: send mine again
         const want = this.state.agentModes?.[from]
         const wantName = this.state.agentNames?.[from]
-        if ((want && want !== env.status.mode) || (wantName && env.status.name && wantName !== env.status.name)) void this.sendAgentSettings(from)
+        const profileStale = (env.status.profile ?? '') !== profileRev(this.state.agentAvatars?.[from], this.state.agentInstructions?.[from])
+        if ((want && want !== env.status.mode) || (wantName && env.status.name && wantName !== env.status.name) || profileStale) void this.sendAgentSettings(from)
         this.changed('agent-status')
         return
       }
@@ -557,7 +577,7 @@ export class Kurultay extends Emitter<EngineEvents> {
           createdAt: now(),
           groupId: '',
           groupName: env.groupName,
-          requester: { pubkey: from, name: agent.label, kind: 'agent', inbox: agent.inbox, owner: this.pubkey, card: env.card },
+          requester: { pubkey: from, name: agent.label, kind: 'agent', inbox: agent.inbox, owner: this.pubkey, card: env.card && safeCard(env.card) },
         }
         this.state.approvals[env.reqId] = a
         this.emit('approval', a)
@@ -602,7 +622,7 @@ export class Kurultay extends Emitter<EngineEvents> {
       inbox: env.inbox,
       owner: att?.owner,
       attestation: att ? env.attestation : undefined,
-      card: env.card,
+      card: env.card && safeCard(env.card),
     }
     inv.uses++
     if (inv.autoAdmit) {
@@ -641,7 +661,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     }
     // one agent per owner and host: an older identity for the same host (e.g. from an earlier ticket) is replaced
     const stale = Object.values(g.roster.members).filter((m) => m.kind === 'agent' && m.pubkey !== from && m.owner === att.owner && checkAttestation(m.attestation, m.pubkey)?.label === att.label)
-    const admitNow = () => this.admit(g.id, { pubkey: from, name: String(env.name).slice(0, 64), kind: 'agent', inbox: env.inbox, owner: att.owner, attestation: env.attestation, card: env.card }, env.reqId)
+    const admitNow = () => this.admit(g.id, { pubkey: from, name: String(env.name).slice(0, 64), kind: 'agent', inbox: env.inbox, owner: att.owner, attestation: env.attestation, card: env.card && safeCard(env.card) }, env.reqId)
     if (!stale.length) return admitNow()
     void (async () => {
       for (const m of stale) await this.removeMember(g.id, m.pubkey, 'was replaced by a newer identity')
@@ -944,7 +964,7 @@ export class Kurultay extends Emitter<EngineEvents> {
       attestation: req.attestation,
       joinedAt: now(),
     }
-    if (req.card) g.cards[req.pubkey] = { ...req.card, kind: req.kind }
+    if (req.card) g.cards[req.pubkey] = { ...safeCard(req.card), kind: req.kind }
     g.roster.version++
     void this.sendInbox(req.pubkey, req.inbox, { type: 'key', groupId: g.id, reqId, relays: g.relays, epoch: g.epoch, key: g.key, roster: g.roster })
     void this.sendGroup(groupId, { type: 'state', roster: g.roster, epoch: g.epoch })
@@ -1187,12 +1207,25 @@ export class Kurultay extends Emitter<EngineEvents> {
   }
 
   /** Owner: rename one of my agents. It takes the name in every council it sits in. */
-  async renameAgent(agentPk: string, name: string) {
+  renameAgent(agentPk: string, name: string) {
+    return this.setAgentProfile(agentPk, { name })
+  }
+
+  /**
+   * Owner: set an agent's name, picture and standing instructions. They reach the agent privately (like its permission)
+   * and are re-sent whenever it reports an older copy. A field left out is unchanged; `null` clears it.
+   * Everything is validated before anything is stored, so a rejected field never leaves a half-applied profile.
+   */
+  async setAgentProfile(agentPk: string, profile: { name?: string; avatar?: string | null; instructions?: string | null }) {
     if (!this.state.agents[agentPk]) throw new KurultayError('Not one of your agents')
-    const clean = cleanName(name)
-    if (!clean) throw new KurultayError('Names may use letters, digits and _ # . - (no spaces)')
-    ;(this.state.agentNames ??= {})[agentPk] = clean
-    this.changed('agent-name')
+    const name = profile.name === undefined ? undefined : cleanName(profile.name)
+    if (name === null) throw new KurultayError('Names may use letters, digits and _ # . - (no spaces)')
+    const avatar = profile.avatar == null ? undefined : cleanAvatar(profile.avatar)
+    if (profile.avatar != null && !avatar) throw new KurultayError('The picture must be a small PNG, JPEG or WebP data URL')
+    if (name) (this.state.agentNames ??= {})[agentPk] = name
+    if (profile.avatar !== undefined) this.state.agentAvatars = withEntry(this.state.agentAvatars, agentPk, avatar)
+    if (profile.instructions !== undefined) this.state.agentInstructions = withEntry(this.state.agentInstructions, agentPk, cleanInstructions(profile.instructions))
+    this.changed('agent-profile')
     await this.sendAgentSettings(agentPk)
   }
 
@@ -1200,7 +1233,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     const a = this.state.agents[agentPk]
     if (!a) return
     const mode = this.state.agentModes?.[agentPk] ?? this.state.agentStatus?.[agentPk]?.mode ?? DEFAULT_AGENT_MODE
-    await this.sendInbox(agentPk, a.inbox, { type: 'agent_settings', mode, name: this.state.agentNames?.[agentPk] })
+    await this.sendInbox(agentPk, a.inbox, { type: 'agent_settings', mode, name: this.state.agentNames?.[agentPk], avatar: this.state.agentAvatars?.[agentPk], instructions: this.state.agentInstructions?.[agentPk] })
   }
 
   /** Agent: the permission my owner set (talk only until told otherwise). */
@@ -1212,7 +1245,7 @@ export class Kurultay extends Emitter<EngineEvents> {
   async reportStatus(status: Omit<AgentStatus, 'at' | 'mode'>) {
     const o = this.state.owner
     if (!o?.attestation) return
-    await this.sendInbox(o.pubkey, o.inbox, { type: 'agent_status', status: { ...status, mode: this.agentMode, name: this.name } })
+    await this.sendInbox(o.pubkey, o.inbox, { type: 'agent_status', status: { ...status, mode: this.agentMode, name: this.name, profile: profileRev(this.state.agentSettings?.avatar, this.state.agentSettings?.instructions) } })
   }
 
   // ------------------------------------------------------------------ pairing

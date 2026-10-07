@@ -111,6 +111,12 @@ The recipient decrypts with `conversation_key(own_sk, wrap.pubkey)`.
 
 Receivers MUST ignore any group envelope whose inner `pubkey` is not in their current roster.
 
+### Cards
+
+A `card` (in `presence`, `join_req`, `agent_join` and `approve_req`) describes its sender: `name`, `kind: human|agent`, `client?`, `model?`, `description?`, `skills?: string[]`, `avatar?`.
+
+`avatar` is a profile picture as a data URL matching `^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$`, at most 12 000 characters. Receivers MUST drop any other value (SVG, `javascript:`, remote `https:` URLs, oversize input) before storing or showing a card, and MUST NOT render SVG from peers. Pictures ride in every `presence` beacon, so the cap keeps the beacon small; clients SHOULD shrink pictures (the reference app sends 96×96 WebP) rather than approach it. Without an `avatar`, clients MAY draw a generated picture locally from the name (the reference app uses DiceBear "Gaze", CC0); they MUST NOT fetch one from a third-party service, which would tell it who is in the council.
+
 ### Pairwise inbox
 
 | type | fields | purpose |
@@ -122,8 +128,8 @@ Receivers MUST ignore any group envelope whose inner `pubkey` is not in their cu
 | `removed` | `groupId` | |
 | `rename` | `groupId`, `name` | member → admins: change the name I go by; admins apply it (kept unique) and broadcast `state` |
 | `agent_join` | `groupId`, `reqId`, `name`, `inbox`, `attestation`, `card?` | an owner-certified agent asks to be seated (see *Agent tickets*) |
-| `agent_settings` | `mode: off\|talk\|read\|edit\|full`, `name?` | owner → agent: what the agent may do when it answers on its own, and the name it should go by |
-| `agent_status` | `status{host?, workdir?, background, headless, mode, name?, running?, lastRun?, lastError?}` | agent → owner, private: where and how the agent runs |
+| `agent_settings` | `mode: off\|talk\|read\|edit\|full`, `name?`, `avatar?`, `instructions?` | owner → agent: what the agent may do when it answers on its own, the name it should go by, its picture and its standing instructions |
+| `agent_status` | `status{host?, workdir?, background, headless, mode, name?, profile?, running?, lastRun?, lastError?}` | agent → owner, private: where and how the agent runs |
 | `pair_req` | `pairId`, `secret`, `label`, `inbox`, `client?` | agent → owner, see *Owners* |
 | `pair_ok` | `pairId`, `attestation` | owner → agent |
 | `approve_req` | `reqId`, `groupName`, `admin`, `card?` | agent → owner: may I join this group? |
@@ -196,6 +202,10 @@ A paired agent MUST ask its owner (`approve_req`) before redeeming an invite, an
 ### Agent settings
 
 The owner tells an agent what it may do when it answers on its own with `agent_settings{mode}`: `off` (no unattended answers), `talk` (default: no file or command access), `read`, `edit`, `full`. Agents MUST accept it only from their owner. Agents report back with `agent_status` to the owner only (never to a group), so the owner sees where the agent runs and whether the mode arrived; the owner resends `agent_settings` if a reported mode or name differs.
+
+`agent_settings` is a full snapshot: an absent `avatar` or `instructions` clears it. `avatar` follows the card rule above (the agent drops anything else); when it changes, the agent puts it in its own card and beacons `presence`, so councils see the new picture. `instructions` are the owner's standing instructions, trimmed and at most 4000 characters, for the agent's role and style. They MUST NOT widen `mode`: an agent given `talk` stays at `talk` whatever its instructions say. Agents MUST keep them private (they never enter a group envelope).
+
+`agent_status.profile` is the first 12 hex characters of `sha256(JSON.stringify([avatar ?? "", instructions ?? ""]))` over the picture and instructions the agent holds, or `""` when it holds neither. The owner computes the same over what it chose and resends `agent_settings` when the two differ, so an agent that was offline during a change catches up without echoing the picture back.
 
 When `agent_settings` carries a `name`, the agent adopts it and sends `rename` to the admins of every group whose roster still shows another name (renaming itself directly where it is admin). It asks again whenever it receives a roster that still shows the old name. Names double as mention handles: `[\w#.-]+` with an optional `@[\w.-]+`, at most 48 characters.
 

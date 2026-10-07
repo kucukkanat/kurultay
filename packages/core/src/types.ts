@@ -31,6 +31,8 @@ export interface Card {
   model?: string
   description?: string
   skills?: string[]
+  /** profile picture: a small raster data URL (see cleanAvatar). Without one, apps draw a generated avatar from the name. */
+  avatar?: string
 }
 
 export interface Member {
@@ -198,6 +200,8 @@ export interface AgentStatus {
   running?: boolean
   lastRun?: number
   lastError?: string
+  /** profileRev of the picture and instructions the agent holds, so the owner can tell a stale copy */
+  profile?: string
   at: number
 }
 
@@ -223,11 +227,14 @@ export interface State {
   agentModes?: Record<string, AgentMode>
   agentStatus?: Record<string, AgentStatus>
   /** agent side: settings from my owner */
-  agentSettings?: { mode: AgentMode; name?: string; updatedAt: number }
+  agentSettings?: { mode: AgentMode; name?: string; avatar?: string; instructions?: string; updatedAt: number }
   /** blobs I uploaded and must delete when they expire */
   uploads?: Record<string, UploadRecord>
   /** owner: the names I gave my agents */
   agentNames?: Record<string, string>
+  /** owner: the pictures and standing instructions I gave my agents */
+  agentAvatars?: Record<string, string>
+  agentInstructions?: Record<string, string>
   seen: Record<string, number>
 }
 
@@ -271,7 +278,7 @@ export type Envelope =
   | { type: 'sync_req'; groupId: string; epoch: number }
   | { type: 'removed'; groupId: string }
   | { type: 'agent_join'; groupId: string; reqId: string; name: string; inbox: string; attestation: NostrEvent; card?: Card }
-  | { type: 'agent_settings'; mode: AgentMode; name?: string }
+  | { type: 'agent_settings'; mode: AgentMode; name?: string; avatar?: string; instructions?: string }
   | { type: 'rename'; groupId: string; name: string }
   | { type: 'agent_status'; status: Omit<AgentStatus, 'at'> }
   | { type: 'pair_req'; pairId: string; secret: string; label: string; client?: string; inbox: string }
@@ -295,4 +302,17 @@ export interface Inbound {
 export function cleanName(input: string): string | null {
   const name = input.trim().replace(/\s+/g, '-').replace(/^@+/, '').slice(0, 48)
   return /^[\w#.\-]+(?:@[\w.\-]+)?$/.test(name) && /\w/.test(name) ? name : null
+}
+
+/** A picture rides inside every presence beacon, so type and size are capped for every reader. SVG never: it can script. */
+export const MAX_AVATAR_CHARS = 12_000
+export const MAX_INSTRUCTIONS_CHARS = 4000
+const AVATAR_RE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/
+
+export function cleanAvatar(input: unknown): string | undefined {
+  return typeof input === 'string' && input.length <= MAX_AVATAR_CHARS && AVATAR_RE.test(input) ? input : undefined
+}
+
+export function cleanInstructions(input: unknown): string | undefined {
+  return (typeof input === 'string' ? input.trim().slice(0, MAX_INSTRUCTIONS_CHARS) : '') || undefined
 }

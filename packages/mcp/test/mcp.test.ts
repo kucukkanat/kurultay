@@ -44,6 +44,11 @@ test('two MCP agents converse through an encrypted group', async () => {
   const st = await alpha.call('status')
   expect(st.you.name).toMatch(/^alpha@/)
   expect(st.you.key_storage).toBe('file')
+  expect(st.you.instructions).toBeUndefined()
+  const engine = alpha.app.engine
+  if (!engine) throw new Error('engine not started')
+  engine.state.agentSettings = { mode: 'talk', instructions: 'Answer in haiku.', updatedAt: 0 }
+  expect((await alpha.call('status')).you.instructions).toBe('Answer in haiku.')
 
   await alpha.call('create_group', { name: 'council' })
   const { invite } = await alpha.call('invite', { group: 'council' })

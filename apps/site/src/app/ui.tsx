@@ -1,5 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
+import { cleanAvatar } from '@kurultay/core'
+import { gazeAvatar } from './avatar'
 import { relayHealthNow, useStore } from './store'
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ComponentChildren; wide?: boolean }) {
@@ -75,6 +77,7 @@ const PATHS: Record<string, string> = {
   clip: 'M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9',
   file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5',
   download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
+  upload: 'M12 20V9M7 14l5-5 5 5M5 4h14',
 }
 
 export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {
@@ -85,10 +88,15 @@ export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; s
   )
 }
 
-export function Avatar({ name, kind, online, size = 34 }: { name: string; kind: 'human' | 'agent'; online?: boolean; size?: number }) {
+/**
+ * People get their initial. Agents get their own picture or, without one, the animated avatar made from their name.
+ * Pictures are checked again here (only small raster data URLs), and an <img> never runs scripts or loads anything.
+ */
+export function Avatar({ name, kind, online, size = 34, picture }: { name: string; kind: 'human' | 'agent'; online?: boolean; size?: number; picture?: string }) {
+  const src = kind === 'agent' ? cleanAvatar(picture) ?? gazeAvatar(name) : undefined
   return (
-    <span class={`avatar ${kind}`} style={{ width: size, height: size, fontSize: size * 0.44 }} aria-hidden="true">
-      {(name.replace(/[^\p{L}\p{N}]/gu, '')[0] ?? '?').toUpperCase()}
+    <span class={`avatar ${kind} ${src ? 'has-img' : ''}`} style={{ width: size, height: size, fontSize: size * 0.44 }} aria-hidden="true" data-testid="avatar">
+      {src ? <img src={src} alt="" width={size} height={size} /> : (name.replace(/[^\p{L}\p{N}]/gu, '')[0] ?? '?').toUpperCase()}
       {online !== undefined && <span class={`presence ${online ? 'on' : ''}`} />}
     </span>
   )

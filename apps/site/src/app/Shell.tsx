@@ -284,7 +284,7 @@ function MessageRow({ e, g, m, prev, names }: { e: Kurultay; g: GroupState; m: M
 
   return (
     <div class={`msg ${grouped ? 'grouped' : ''} ${mine ? 'mine' : ''} ${forMe ? 'for-me' : ''}`}>
-      <div class="msg-gutter">{!grouped && <Avatar name={name} kind={kind} />}</div>
+      <div class="msg-gutter">{!grouped && <Avatar name={name} kind={kind} picture={who?.card?.avatar} />}</div>
       <div class="msg-body">
         {!grouped && (
           <div class="msg-head">
@@ -566,7 +566,7 @@ function MembersPanel({ e, g, close, go }: { e: Kurultay; g: GroupState; close: 
       <ul class="member-list">
         {members.map((m) => (
           <li key={m.pubkey} class="member">
-            <Avatar name={m.name} kind={m.kind} online={m.online} />
+            <Avatar name={m.name} kind={m.kind} online={m.online} picture={m.card?.avatar} />
             <div class="member-main">
               <div class="member-name">
                 {m.name}
@@ -754,7 +754,7 @@ function ApprovalsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
           <ul class="approval-list">
             {list.map((a) => (
               <li key={a.reqId}>
-                <Avatar name={a.requester.name} kind={a.requester.kind} />
+                <Avatar name={a.requester.name} kind={a.requester.kind} picture={a.requester.card?.avatar} />
                 <div class="approval-main">
                   {a.kind === 'agent-join' ? (
                     <p>

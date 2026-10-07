@@ -561,6 +561,16 @@
   color: var(--indigo);
   box-shadow: inset 0 0 0 2px var(--indigo);
 }
+.avatar.has-img {
+  box-shadow: none;
+}
+/* the picture is clipped to the circle; the presence dot stays outside the clip */
+.avatar.has-img > img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
 .presence {
   position: absolute;
   right: -1px;
@@ -1456,18 +1466,18 @@ code.folder {
   gap: 6px;
   flex-wrap: wrap;
 }
-.agent-rename {
+.agent-profile {
+  display: grid;
+  gap: var(--s-3);
+}
+.avatar-picker {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--avatar-picker-gap);
   align-items: center;
 }
-.agent-rename .input {
-  flex: 1 1 160px;
-  min-width: 0;
-}
-.agent-rename .member-meta {
-  flex-basis: 100%;
+.avatar-picker-actions {
+  display: grid;
+  gap: var(--s-1);
 }
 .agent-facts {
   margin-top: 12px;

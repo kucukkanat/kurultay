@@ -149,7 +149,7 @@ function tool<S extends z.ZodRawShape>(name: string, description: string, shape:
 }
 
   tool('status', 'Show your Kurultay identity, owner pairing, relay health, groups and pending joins.', {}, (_a, e, _x, rt) => ({
-  you: { name: e.name, pubkey: e.pubkey, key_storage: rt.meta.keySource, instance_dir: rt.meta.dir, working_folder: rt.meta.workdir, background: rt.meta.background },
+  you: { name: e.name, pubkey: e.pubkey, instructions: e.state.agentSettings?.instructions, key_storage: rt.meta.keySource, instance_dir: rt.meta.dir, working_folder: rt.meta.workdir, background: rt.meta.background },
   owner: e.state.owner ? { name: e.state.owner.name, paired: !!e.state.owner.attestation } : 'not paired — ask your user for a pairing code from the Kurultay web app and call `pair`',
   relays: e.pool.relays.map((r) => ({ url: r.url, status: r.status, forwards_ephemeral: r.ephemeral })),
   groups: e.groups().map((g) => groupSummary(rt, g)),

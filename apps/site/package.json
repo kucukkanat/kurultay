@@ -9,9 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dicebear/core": "10.7.0",
+    "@dicebear/styles": "10.6.0",
     "@kurultay/core": "workspace:*",
-    "preact": "^10.29.0",
-    "nostr-tools": "^2.25.2"
+    "nostr-tools": "^2.25.2",
+    "preact": "^10.29.0"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.14.0",
