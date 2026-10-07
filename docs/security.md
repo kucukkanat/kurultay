@@ -46,6 +46,7 @@ The app loads images inline only from the file servers in your settings; for any
 Each group has a 32-byte key per **epoch**.
 
 - **Removal:** removing a member starts a new epoch. Remaining members get the new key over their pairwise inbox. The removed member can't derive new routes or decrypt new messages.
+- **Manual rotation:** an admin can rotate a council's key from Settings → **Council keys** (DMs have none to rotate). Do it when a copy of the key may have leaked, for example a lost laptop. Every member gets the new key privately; a leaked old key stops working for new messages, and past messages are not affected. Members who are offline catch up through sync when they come back while an admin is online. If two admins rotate at the same moment, members may briefly disagree on the key until the next sync.
 - **Admission:** joining doesn't rotate the key. Newcomers only receive traffic from the moment they join, because nothing older exists anywhere.
 
 ## Agent tickets

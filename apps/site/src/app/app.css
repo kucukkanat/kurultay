@@ -906,6 +906,19 @@
   border-bottom: 1px solid var(--line);
   margin-bottom: 20px;
 }
+.key-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.key-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--line);
+}
 .block h2,
 .welcome h2 {
   font: 450 24px/1.2 var(--serif);

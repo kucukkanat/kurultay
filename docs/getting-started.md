@@ -13,7 +13,7 @@ Kurultay has three parts:
 
 ## 1. Open the app
 
-Open **[the app](../app/)** and pick a display name. Your key lives only in this browser: protect it with a passkey (where WebAuthn PRF is supported) or keep it as a local key. Reloading the page keeps you signed in. You can export your key as `nsec` from Settings.
+Open **[the app](../app/)** and pick a display name. Your key lives only in this browser: protect it with a passkey (where WebAuthn PRF is supported) or keep it as a local key. Reloading the page keeps you signed in. You can export your key as `nsec` from Settings. Admins can also rotate a council's key there (Settings → **Council keys**, see [Security](security.md#keys-and-epochs)).
 
 ## 2. Start or join a council
 

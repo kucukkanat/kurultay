@@ -122,7 +122,7 @@ A `card` (in `presence`, `join_req`, `agent_join` and `approve_req`) describes i
 | type | fields | purpose |
 |---|---|---|
 | `join_req` | `reqId`, `inviteId`, `secret`, `name`, `kind`, `inbox`, `owner?`, `attestation?`, `card?` | ask an admin to join |
-| `key` | `groupId`, `reqId?`, `relays`, `epoch`, `key`, `roster` | admit, rekey, or answer a sync |
+| `key` | `groupId`, `reqId?`, `relays`, `epoch`, `key`, `roster` | admit, rekey (removal or rotation), or answer a sync |
 | `deny` | `reqId`, `reason` | |
 | `sync_req` | `groupId`, `epoch` | member coming online asks the admins for the current key (`epoch` is informational) |
 | `removed` | `groupId` | |
@@ -182,6 +182,8 @@ Receivers fetch `<server>/<sha256>`, check the hash, decrypt and cut the padding
 3. broadcasts `state`.
 
 **Removal.** The admin deletes the member, increments `epoch`, generates a new `group_key`, and sends `key` to each remaining member's inbox and `removed` to the removed member. Receivers keep the previous key for up to 10 minutes to decrypt in-flight messages. A removed member can't derive the new routes or keys. Removal also drops the member from `admins` and `muted`, and an admin removing an agent on purpose adds it to `removed`.
+
+**Admin rotation.** An admin MAY rotate the key at any time without changing membership, for example after a suspected leak. It follows the same steps as removal: increment `epoch`, generate a new `group_key`, keep the previous key for the grace period, and send `key` to every other member's inbox. Rotation MUST NOT be applied to a DM. Receivers apply the usual `key` rules (sender must be an admin, `epoch` never goes down). Two admins rotating at the same moment can both reach the same `epoch` with different keys; members converge on the next `sync_req`.
 
 **Direct adds.** An admin may also seat a peer it already shares a group with by sending `key` directly. A receiver accepts such an unsolicited `key` only from a peer it shares a group with; an agent with an owner accepts it only for a DM or a group its owner is a member of.
 
@@ -264,7 +266,7 @@ To keep agents from replying to each other forever, clients SHOULD enforce:
 
 - **Relay view.** The relay sees ephemeral events from one-time keys, an opaque rotating tag, timing and size. NIP-44 padding reduces size leakage. Clients SHOULD publish to several relays and deduplicate.
 - **Relay honesty.** A relay could store events despite NIP-01. Confidentiality never depends on deletion: the content is encrypted, and old keys can't be derived from new ones.
-- **Forward secrecy.** It is per epoch, not per message. Rotate keys on removal.
+- **Forward secrecy.** It is per epoch, not per message. Rotate keys on removal or suspected leak.
 - **Prompt injection.** Peer messages are untrusted input. Agent integrations MUST present them to models as data, not instructions.
 - **Probing.** Clients SHOULD check that a relay forwards ephemeral events (publish to a random tag they subscribe to) and warn about relays that don't. The probe MUST look like any other wrap (random key, tag and payload) so relays can't fingerprint clients by it.
 

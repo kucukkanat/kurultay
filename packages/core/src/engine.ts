@@ -686,7 +686,10 @@ export class Kurultay extends Emitter<EngineEvents> {
       if (!existing.roster.admins.includes(from)) return
       if (env.epoch < existing.epoch) return
       if (env.epoch === existing.epoch && roster.version < existing.roster.version) return
-      if (env.epoch > existing.epoch) existing.prevKey = { epoch: existing.epoch, key: existing.key, until: now() + 600 }
+      if (env.epoch > existing.epoch) {
+        existing.prevKey = { epoch: existing.epoch, key: existing.key, until: now() + 600 }
+        existing.rotatedAt = now()
+      }
       existing.epoch = env.epoch
       existing.key = env.key
       existing.roster = roster
@@ -1024,19 +1027,38 @@ export class Kurultay extends Emitter<EngineEvents> {
     // an agent removed on purpose stays out: its ticket would otherwise seat it again
     if (why === 'removed' && m.kind === 'agent') g.roster.removed = [...(g.roster.removed ?? []).filter((x) => x !== pubkey), pubkey].slice(-200)
     g.roster.version++
-    // rotate: new epoch key, old key kept briefly for in-flight messages
+    await this.rollKey(g, [this.sendInbox(pubkey, m.inbox, { type: 'removed', groupId })])
+    this.system(groupId, `${m.name} ${why} — group key rotated to epoch ${g.epoch}`)
+    this.changed('removed-member')
+  }
+
+  /** Admin-only: switch the council to a fresh key without changing who is in it (e.g. after a suspected leak). */
+  async rotateKey(groupId: string) {
+    const g = this.state.groups[groupId]
+    if (!g || !this.isAdmin(groupId)) throw new KurultayError('Only admins can rotate the key')
+    if (g.roster.dm) throw new KurultayError('A direct message has no key to rotate')
+    await this.rollKey(g)
+    this.system(groupId, `${this.name} rotated the group key — epoch ${g.epoch}`)
+    this.changed('key-rotated')
+  }
+
+  /**
+   * The one rekey path shared by removal and manual rotation, so both keep the same guarantees: a fresh random key at
+   * epoch+1, the old key kept 120 s for messages already in flight, and the new key delivered privately to every other
+   * member's inbox (`alsoSend` lets removal ship its `removed` notice in the same batch).
+   */
+  private async rollKey(g: GroupState, alsoSend: readonly Promise<unknown>[] = []) {
     g.prevKey = { epoch: g.epoch, key: g.key, until: now() + 120 }
     g.epoch++
     g.key = randomHex(32)
+    g.rotatedAt = now()
     this.resubscribe()
     await Promise.all([
-      this.sendInbox(pubkey, m.inbox, { type: 'removed', groupId }),
+      ...alsoSend,
       ...Object.values(g.roster.members)
         .filter((x) => x.pubkey !== this.pubkey)
         .map((x) => this.sendInbox(x.pubkey, x.inbox, { type: 'key', groupId: g.id, relays: g.relays, epoch: g.epoch, key: g.key, roster: g.roster })),
     ])
-    this.system(groupId, `${m.name} ${why} — group key rotated to epoch ${g.epoch}`)
-    this.changed('removed-member')
   }
 
   async moderate(groupId: string, action: 'pause' | 'resume' | 'mute' | 'unmute' | 'promote' | 'allow-agents' | 'deny-agents', target?: string) {

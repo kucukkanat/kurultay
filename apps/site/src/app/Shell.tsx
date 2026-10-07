@@ -5,6 +5,7 @@ import { watchWord } from './devmode'
 import { Avatar, CopyField, Icon, Modal, RelayHealthBadge, Rich, timeOf } from './ui'
 import { Attachments, filesFrom, PendingChips, usePendingFiles, type PendingFiles } from './files'
 import { DevDrawer } from './Dev'
+import { CouncilKeys } from './CouncilKeys'
 import { AddAgentDialog, AgentsList, MODES, myAgents } from './agents'
 import { forgetIdentity, loadIdentity, lockIdentity, nsecOf, renameIdentity } from './identity'
 import { isDark, toggleTheme } from '../shared/theme'
@@ -799,6 +800,7 @@ function SettingsView({ e, openNav }: { e: Kurultay; openNav: () => void }) {
     <div class="page">
       <TopBar title="Settings" openNav={openNav} />
       <div class="page-body">
+        <CouncilKeys e={e} />
         <section class="block">
           <h2>Relays</h2>
           <p class="muted">Kurultay only needs relays that forward ephemeral events. Each relay is checked on connect by sending an event to ourselves.</p>

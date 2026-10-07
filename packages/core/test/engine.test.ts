@@ -177,6 +177,84 @@ describe('engine', () => {
   })
 })
 
+describe('key rotation', () => {
+  async function council(name: string) {
+    const admin = await peer(`${name}-admin`, 'human')
+    const alice = await peer(`${name}-alice`, 'human')
+    const g = admin.createGroup(name)
+    await alice.redeem(admin.createInvite(g.id))
+    await until(() => alice.state.groups[g.id])
+    return { admin, alice, id: g.id }
+  }
+
+  test('an admin rotates: both sides move to the new key and keep talking', async () => {
+    const { admin, alice, id } = await council('rot')
+    const old = admin.state.groups[id].key
+    await admin.rotateKey(id)
+    const g = admin.state.groups[id]
+    expect(g.epoch).toBe(1)
+    expect(g.key).not.toBe(old)
+    expect(g.rotatedAt).toBeGreaterThan(0)
+    expect(g.history.some((m) => m.type === 'system' && m.text.includes('rotated the group key'))).toBe(true)
+    await until(() => alice.state.groups[id].epoch === 1)
+    expect(alice.state.groups[id].key).toBe(g.key)
+    expect(alice.state.groups[id].rotatedAt).toBeGreaterThan(0)
+    await admin.send(id, 'from admin')
+    await alice.send(id, 'from alice')
+    await until(() => alice.state.groups[id].history.some((m) => m.text === 'from admin'))
+    await until(() => admin.state.groups[id].history.some((m) => m.text === 'from alice'))
+  })
+
+  test('only admins rotate, and never a DM', async () => {
+    const { admin, alice, id } = await council('rot-guard')
+    await expect(alice.rotateKey(id)).rejects.toThrow(/Only admins/)
+    expect(admin.state.groups[id].epoch).toBe(0)
+    const dm = await admin.openDM(alice.pubkey)
+    await expect(admin.rotateKey(dm)).rejects.toThrow(/direct message/)
+  })
+
+  test('a leaked copy of the old key cannot read messages sent after rotation', async () => {
+    const { admin, alice, id } = await council('rot-leak')
+    const leaked = admin.state.groups[id].key
+    await admin.rotateKey(id)
+    await until(() => alice.state.groups[id].epoch === 1)
+    const before = relay.observed.length
+    await admin.send(id, 'post-rotation secret')
+    await until(() => alice.state.groups[id].history.some((m) => m.text === 'post-rotation secret'))
+    const after = relay.observed.slice(before)
+    const opens = (key: string) => after.filter((e) => { try { return unwrapGroup(e, id, key).env.type === 'chat' } catch { return false } })
+    expect(opens(admin.state.groups[id].key).length).toBeGreaterThan(0)
+    expect(opens(leaked)).toHaveLength(0)
+  })
+
+  test('a member offline during rotation catches up through sync on restart', async () => {
+    const admin = await peer('rot-off-admin', 'human')
+    const sk = newSecretKey()
+    const storage = new MemoryStorage()
+    const make = () => new Kurultay({ sk, name: 'sleeper', kind: 'human', relays: [relay.url], storage, presenceInterval: 3_600_000 })
+    const first = make()
+    await first.start()
+    const g = admin.createGroup('rot-offline')
+    await first.redeem(admin.createInvite(g.id))
+    await until(() => first.state.groups[g.id])
+    await first.stop()
+    await admin.rotateKey(g.id)
+    const back = make()
+    peers.push(back)
+    await back.start()
+    await until(() => back.state.groups[g.id]?.epoch === 1)
+    expect(back.state.groups[g.id].key).toBe(admin.state.groups[g.id].key)
+  })
+
+  test('removal shares the rotation path: new epoch, rotatedAt set, removed member told', async () => {
+    const { admin, alice, id } = await council('rot-remove')
+    await admin.removeMember(id, alice.pubkey)
+    expect(admin.state.groups[id].epoch).toBe(1)
+    expect(admin.state.groups[id].rotatedAt).toBeGreaterThan(0)
+    await until(() => !alice.state.groups[id])
+  })
+})
+
 describe('agent tickets', () => {
   async function agentFromTicket(ticket: string, host: string, name: string) {
     const { decodeTicket } = await import('../src/links')

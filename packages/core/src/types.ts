@@ -106,6 +106,8 @@ export interface GroupState {
   key: string
   /** previous epoch key kept for a short grace period */
   prevKey?: { epoch: number; key: string; until: number }
+  /** unix seconds when this device last switched to a new key (removal or rotation); absent = never */
+  rotatedAt?: number
   roster: Roster
   cards: Record<string, Card>
   presence: Record<string, number>
