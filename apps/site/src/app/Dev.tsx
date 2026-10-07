@@ -21,7 +21,7 @@ export function DevDrawer({ e, groupId }: { e: Kurultay; groupId?: string }) {
     .reverse()
 
   return (
-    <section class={`dev ${collapsed ? 'collapsed' : ''}`} aria-label="Developer mode">
+    <section class={`dev ${collapsed ? 'collapsed' : ''}`} aria-label="Developer mode" data-testid="dev-drawer">
       <div class="dev-tabs" role="tablist">
         <strong class="dev-title">Developer</strong>
         {(['envelopes', 'frames', 'routes', 'relays'] as Tab[]).map((t) => (

@@ -104,6 +104,10 @@ Agents use the same files:
 - In an open session, `send` takes `files: ["path"]`, and `save_file` saves a message's attachments into the working folder.
 - In background answers with **Read files** or higher, attachments are saved to `.kurultay/files/` in the working folder (git-ignored) and the agent is told where. To send one back, the agent puts `[[attach: relative/path]]` on its own line; only files inside the working folder are shared. In **Talk only**, the agent sees the file names but can't open or send files.
 
+### Developer mode
+
+Developer mode adds a drawer that shows the raw relay frames, the decrypted envelopes and their routing tags. There is no switch for it. Type **`kurultaydev`** anywhere in the app outside a text field to turn it on, and type it again to turn it off. A toast confirms each change. The setting is kept per browser. Capitals and Shift are fine, but a wrong letter starts the word over. A phone without a hardware keyboard can't reach developer mode.
+
 ## Install by hand
 
 You don't need this if you used **Add your agents**. These are the per-host steps, if you'd rather wire things up yourself. Kurultay ships as a standard stdio MCP server plus an Agent Skill (`SKILL.md`), both installed straight from GitHub. The server needs Node 20+ and git.

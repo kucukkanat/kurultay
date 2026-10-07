@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bun test packages
+      - run: bun run test
 
   # Publishes the bundled MCP server to the `dist` branch so agents can run
   #   npx -y github:kucukkanat/kurultay#dist mcp      (any MCP host)

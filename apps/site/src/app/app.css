@@ -326,33 +326,6 @@
   font: 11.5px var(--mono);
   color: var(--ink-3);
 }
-.switch {
-  position: relative;
-  cursor: pointer;
-}
-.switch input {
-  position: absolute;
-  opacity: 0;
-  inset: 0;
-}
-.switch-track {
-  display: inline-grid;
-  place-items: center;
-  width: 34px;
-  height: 26px;
-  border-radius: 7px;
-  border: 1px solid var(--line-2);
-  color: var(--ink-3);
-}
-.switch input:checked + .switch-track {
-  background: var(--ink);
-  color: var(--felt);
-  border-color: var(--ink);
-}
-.switch input:focus-visible + .switch-track {
-  outline: 2px solid var(--ochre);
-  outline-offset: 2px;
-}
 .scrim {
   display: none;
 }

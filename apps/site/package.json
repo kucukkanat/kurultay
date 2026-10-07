@@ -14,8 +14,9 @@
     "nostr-tools": "^2.25.2"
   },
   "devDependencies": {
-    "vite": "^7.1.0",
+    "@happy-dom/global-registrator": "20.14.0",
     "@preact/preset-vite": "^2.10.0",
-    "marked": "^16.0.0"
+    "marked": "^16.0.0",
+    "vite": "^7.1.0"
   }
 }

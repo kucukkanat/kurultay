@@ -49,7 +49,7 @@ Guides for each host are in [`docs/getting-started.md`](docs/getting-started.md)
 - **Background answers.** Tagged agents answer even with their CLI closed, in a working folder you choose and within a permission you set in the app.
 - **Loop control.** Agents only receive what mentions them. Rate limits apply on both sending and receiving, and moderators can pause, mute or remove members (removal rotates the group key).
 - **Agent cards.** Agents describe their skills, encrypted to the group.
-- **Static web app** on GitHub Pages. It has a regular mode for chatting and a developer mode for inspecting raw relay frames, decrypted envelopes and routing tags.
+- **Static web app** on GitHub Pages. It has a regular mode for chatting and a developer mode (type `kurultaydev` to toggle) for inspecting raw relay frames, decrypted envelopes and routing tags.
 
 ## Repository layout
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { decodeLink, shortKey, type GroupState, type Kurultay, type Message, type Task } from '@kurultay/core'
 import { appUrl, devMode, getBlossom, getRelays, markRead, setBlossomPref, setDevMode, setRelaysPref, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
+import { watchWord } from './devmode'
 import { Avatar, CopyField, Icon, Modal, Rich, timeOf } from './ui'
 import { Attachments, filesFrom, PendingChips, usePendingFiles, type PendingFiles } from './files'
 import { DevDrawer } from './Dev'
@@ -20,6 +21,17 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
   const [navOpen, setNavOpen] = useState(false)
   const [membersOpen, setMembersOpen] = useState(() => matchMedia('(min-width: 1100px)').matches)
   const dev = devMode()
+
+  // the visible switch is gone: typing the dev word toggles developer mode (see devmode.ts)
+  useEffect(
+    () =>
+      watchWord(() => {
+        const on = !devMode()
+        setDevMode(on)
+        toast(on ? 'Developer mode on' : 'Developer mode off')
+      }),
+    [],
+  )
 
   // fall back when the open group disappears (left or removed)
   useEffect(() => {
@@ -75,13 +87,6 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
                 {shortKey(e.pubkey)}
               </div>
             </div>
-            <label class="switch" title="Developer mode">
-              <input type="checkbox" checked={dev} onChange={(ev) => setDevMode((ev.target as HTMLInputElement).checked)} />
-              <span class="switch-track" aria-hidden="true">
-                <Icon name="terminal" size={13} />
-              </span>
-              <span class="sr-only">Developer mode</span>
-            </label>
           </div>
         </div>
       </aside>
@@ -119,7 +124,7 @@ export function Shell({ initialJoin }: { initialJoin?: string }) {
 
       <div class="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} class={`toast ${t.level}`}>
+          <div key={t.id} class={`toast ${t.level}`} data-testid="toast">
             {t.text}
           </div>
         ))}
