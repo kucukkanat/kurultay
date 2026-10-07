@@ -19,7 +19,7 @@ export const LABEL: Record<Host, string> = {
   vscode: 'VS Code',
 }
 
-export type SeatErrorCode = 'bad-workdir' | 'bad-ticket' | 'no-hosts' | 'paused' | 'unknown-agent'
+export type SeatErrorCode = 'bad-workdir' | 'bad-ticket' | 'no-hosts' | 'paused' | 'unknown-agent' | 'not-allowed'
 
 /** A request the owner can fix (the app shows the message as is). */
 export class SeatError extends Error {

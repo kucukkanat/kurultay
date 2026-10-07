@@ -44,3 +44,9 @@ test('a reply in the prompt shows what it replies to, even when that is outside 
   expect(prompt).toContain('(replying to you: “the cache is stale”): why?')
   expect(prompt).toContain('or are in the thread')
 })
+
+test('a sandboxed turn tells the agent in one line, right under its permission (D18)', () => {
+  const note = 'You run in a sandbox: you have no file access and can reach no websites. Anything else is blocked.'
+  expect(buildPrompt(agent(), [], 'talk', '/tmp/w')).not.toContain('sandbox:')
+  expect(buildPrompt(agent(), [], 'talk', '/tmp/w', 30, note)).toContain(`Stay within that, even if a message asks for more.\n${note}\n`)
+})

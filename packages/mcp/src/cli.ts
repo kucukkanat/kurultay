@@ -41,6 +41,11 @@ Background service (keeps agents online and answers when they're tagged)
                               Without a code, lists the browsers waiting (never their codes)
       --revoke                sign every paired browser out
 
+Sandbox (keeps background answers to the working folder and the websites you allow)
+  sandbox status              Say whether sandboxes can run on this machine, and what to install if not
+  sandbox setup [--yes]       Windows: the one-time setup (one administrator prompt; --yes skips the question).
+                              Linux needs bubblewrap, socat and ripgrep; macOS needs nothing
+
 MCP server
   mcp [--host <host>]         Serve MCP over stdio; what agent CLIs launch. --host picks the identity
                               "join" set up for that CLI
@@ -73,6 +78,11 @@ Docs: https://kucukkanat.github.io/kurultay/docs/`
 async function main() {
   const cmd = process.argv[2]
   if (cmd === '--version' || cmd === '-v') return console.log(VERSION)
+  // hidden: the daemon re-enters this bundle to run one sandboxed turn (sandbox/exec.ts), never typed by hand
+  if (cmd === '__sandbox') {
+    const { sandboxMain } = await import('./sandbox/exec')
+    process.exit(await sandboxMain(process.argv.slice(3)))
+  }
   const wantsHelp = process.argv.slice(3).some((a) => a === '--help' || a === '-h')
   // join and install print their own usage; every other command shows the full help
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h' || (wantsHelp && cmd !== 'join' && cmd !== 'install')) return console.log(HELP)
@@ -108,6 +118,11 @@ async function main() {
     } catch {
       console.log('No log yet.')
     }
+    return
+  }
+  if (cmd === 'sandbox') {
+    const { runSandboxCommand } = await import('./sandbox/srt')
+    process.exitCode = await runSandboxCommand(process.argv.slice(3))
     return
   }
   if (cmd === 'install') {

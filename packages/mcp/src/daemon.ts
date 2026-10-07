@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
-import { DAEMON_PORT, decodeTicket, DEFAULT_RELAYS, formatBytes, getPublicKey, Kurultay, type AgentMode, type AgentTicket, type DaemonAgentInfo, type DaemonSeatRequest, type DaemonSeatResult, type DaemonSnapshot, type FileRef, type Message } from '@kurultay/core'
+import { DAEMON_PORT, decodeTicket, DEFAULT_RELAYS, EMPTY_SANDBOX_GRANTS, formatBytes, getPublicKey, Kurultay, type AgentMode, type AgentTicket, type DaemonAgentInfo, type DaemonSeatRequest, type DaemonSeatResult, type DaemonSnapshot, type FileRef, type Message, type SandboxAvailability, type SandboxConfig, type SandboxViolation } from '@kurultay/core'
 import { extractAttachments, inboxDir, saveFiles, uploadPaths } from './attach'
 import { defaultOrigins, startControl, type Control, type ControlApi } from './control'
 import { blossomFromEnv, configRoot, displayName, FileStorage } from './instance'
@@ -10,6 +10,7 @@ import { deleteKey, loadOrCreateKey } from './keystore'
 import { answerThread, buildPrompt, cleanAnswer, HEADLESS_HOSTS, headlessCommand, type Incoming } from './headless'
 import { detectHosts, HOSTS, type Host } from './install'
 import { serveIpc } from './ipc'
+import { mergeViolations, srtBackend, startTurn, validateGrants } from './sandbox'
 import { createPairing } from './pairing'
 import { installedRuntime, LABEL, seatAgents, SeatError, workdirOf } from './seat'
 import { writePid } from './service'
@@ -21,6 +22,8 @@ export interface RegistryEntry {
   host: string
   workdir: string
   addedAt: number
+  /** absent: seated by `join` or before sandboxes existed, so it runs unsandboxed until the owner turns it on (D8) */
+  sandbox?: SandboxConfig
 }
 
 const registryFile = () => join(configRoot(), 'agents.json')
@@ -42,6 +45,10 @@ export function writeRegistry(r: Record<string, RegistryEntry>) {
 const INTERACTIVE_GRACE = 10 * 60_000
 const RUNS_PER_HOUR = 30
 const RUN_TIMEOUT = 10 * 60_000
+const MAX_VIOLATIONS = 20
+/** D34: the council learns that something was blocked, never what (paths and hosts would map the owner's machine) */
+export const BLOCKED_NOTE = 'I couldn’t finish: my sandbox blocked something I needed. My owner can see what.'
+export const fellBackNote = (reason: string) => `(I ran without my sandbox this time: ${reason.replace(/\.$/, '')}.)`
 
 const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a)
 
@@ -55,6 +62,10 @@ class BackgroundAgent {
   private runs: number[] = []
   /** the CLI answering right now: ended when the owner switches the agent off or the service stops */
   child?: ChildProcess
+  /** what the sandbox refused in recent turns (one per kind and target, newest first); shown to the owner only */
+  lastViolations: SandboxViolation[] = []
+  /** the last turn should have been sandboxed but ran without it, and why (D6) */
+  fellBack?: string
 
   constructor(
     public instance: string,
@@ -159,24 +170,47 @@ class BackgroundAgent {
     const groups = [...new Set(incoming.map((m) => m.groupId))]
     const tasks = incoming.filter((m) => m.type === 'task' && m.taskId)
     for (const m of tasks) await e.updateTask(m.groupId, m.taskId!, 'working').catch(() => {})
+    const turn = await startTurn({ host: this.entry.host, mode, workdir: this.entry.workdir, config: this.entry.sandbox })
+    // inside the sandbox the CLI may only write its turn folder, so its output file goes there
+    const outFile = join(turn.outDir, `kurultay-${process.pid}-${Date.now()}.txt`)
+    const prompt = buildPrompt(e, incoming, mode, this.entry.workdir, undefined, turn.promptNote)
+    const base = headlessCommand(this.entry.host, mode, prompt, this.entry.workdir, outFile)
+    if (!base) {
+      turn.finish()
+      throw new Error(`${this.entry.host} cannot answer on its own`)
+    }
+    const cmd = turn.wrap(base)
     const typing = setInterval(() => groups.forEach((g) => void e.typing(g, true).catch(() => {})), 20_000)
     groups.forEach((g) => void e.typing(g, true).catch(() => {}))
-
-    const outFile = join(tmpdir(), `kurultay-${process.pid}-${Date.now()}.txt`)
-    const prompt = buildPrompt(e, incoming, mode, this.entry.workdir)
-    const cmd = headlessCommand(this.entry.host, mode, prompt, this.entry.workdir, outFile)!
-    log(this.instance, `answering ${incoming.length} message(s) with ${cmd.cmd} (${mode}) in ${this.entry.workdir}`)
-    let answer: string
+    log(this.instance, `answering ${incoming.length} message(s) with ${base.cmd} (${mode}${turn.active ? ', sandboxed' : ''}) in ${this.entry.workdir}`)
+    let answer = ''
+    let failure: Error | undefined
+    let violations: SandboxViolation[] = []
     try {
-      const out = await runCommand(cmd.cmd, cmd.args, this.entry.workdir, cmd.env, (c) => (this.child = c))
+      const out = await runCommand(cmd.cmd, cmd.args, this.entry.workdir, cmd.env, (c) => (this.child = c), base.cmd)
       answer = cleanAnswer(cmd.outputFile && existsSync(cmd.outputFile) ? readFileSync(cmd.outputFile, 'utf8') : out)
+    } catch (err) {
+      // held until the sandbox is read: a blocked turn still tells the council it could not finish (D34)
+      failure = err instanceof Error ? err : new Error(String(err))
     } finally {
       this.child = undefined
       clearInterval(typing)
       groups.forEach((g) => void e.typing(g, false).catch(() => {}))
       if (existsSync(outFile)) rmSync(outFile, { force: true })
+      violations = turn.finish().violations
     }
-    if (!answer) throw new Error(`${cmd.cmd} returned no answer`)
+    this.fellBack = turn.fellBack
+    if (turn.fellBack) log(this.instance, 'sandbox unavailable, ran without it:', turn.fellBack)
+    // a rolling list, not the last turn's: a clean turn must not take away the Allow buttons for what an earlier one hit
+    if (turn.active) this.lastViolations = mergeViolations(this.lastViolations, violations, MAX_VIOLATIONS)
+    for (const v of violations) log(this.instance, `sandbox blocked ${v.kind}: ${v.target}`)
+    if (!answer) {
+      if (violations.length) {
+        for (const m of tasks) if (m.taskId) await e.updateTask(m.groupId, m.taskId, 'failed', BLOCKED_NOTE).catch(() => {})
+        for (const gid of groups) await e.send(gid, BLOCKED_NOTE).catch((err) => log(this.instance, 'could not post the blocked note:', (err as Error).message))
+      }
+      throw failure ?? new Error(`${base.cmd} returned no answer`)
+    }
     // files the agent chose to share: only from inside its working folder, and only when it may read files
     const { text, paths } = extractAttachments(answer)
     let files: FileRef[] | undefined
@@ -192,6 +226,7 @@ class BackgroundAgent {
         }
       }
     }
+    if (turn.fellBack) notes.push(fellBackNote(turn.fellBack))
     answer = [text, ...notes].filter(Boolean).join('\n') || (files?.length ? '' : answer)
 
     for (const m of tasks) await e.updateTask(m.groupId, m.taskId!, 'done', answer).catch(() => {})
@@ -216,7 +251,8 @@ function endChild(child: ChildProcess) {
   }, 5000).unref()
 }
 
-function runCommand(cmd: string, args: string[], cwd: string, env: Record<string, string> | undefined, started: (c: ChildProcess) => void): Promise<string> {
+// `label` names the agent CLI in errors: a sandboxed turn runs the sandbox wrapper, whose name means nothing to the owner
+function runCommand(cmd: string, args: string[], cwd: string, env: Record<string, string> | undefined, started: (c: ChildProcess) => void, label: string): Promise<string> {
   return new Promise((resolve, reject) => {
     // KURULTAY_BACKGROUND tells a Kurultay MCP server inside the CLI not to act for the agent (see server.ts)
     const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env, KURULTAY_BACKGROUND: '1' }, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -228,12 +264,12 @@ function runCommand(cmd: string, args: string[], cwd: string, env: Record<string
     const timer = setTimeout(() => endChild(child), RUN_TIMEOUT)
     child.on('error', (e) => {
       clearTimeout(timer)
-      reject(new Error(`${cmd} not found or failed to start (${(e as Error).message})`))
+      reject(new Error(`${label} not found or failed to start (${(e as Error).message})`))
     })
     child.on('close', (code) => {
       clearTimeout(timer)
       if (code === 0 || out.trim()) resolve(out)
-      else reject(new Error(`${cmd} exited with ${code}: ${err.trim().split('\n').slice(-3).join(' ')}`))
+      else reject(new Error(`${label} exited with ${code}: ${err.trim().split('\n').slice(-3).join(' ')}`))
     })
   })
 }
@@ -248,6 +284,8 @@ export async function runDaemon() {
   const pairing = createPairing(join(configRoot(), 'pairings.json'))
   // stopped from the app: engines are down but the control server stays up, so the app can start them again
   let paused = false
+  // snapshot() is synchronous: the machine check is cached here and refreshed whenever the agents load
+  let availability: SandboxAvailability = { ok: false, reason: 'not checked yet' }
 
   async function stopAgent(instance: string, reason: string) {
     const a = agents.get(instance)
@@ -258,6 +296,7 @@ export async function runDaemon() {
   }
 
   async function load() {
+    availability = await srtBackend.available()
     if (paused) return
     const reg = readRegistry()
     for (const [instance, entry] of Object.entries(reg)) {
@@ -286,7 +325,7 @@ export async function runDaemon() {
 
   const agentInfo = (): DaemonAgentInfo[] => {
     // stopped: the engines are gone but the seats are still registered, so the app can list them
-    if (paused) return Object.entries(readRegistry()).map(([instance, e]) => ({ instance, pubkey: '', name: displayName(instance), host: e.host, workdir: e.workdir, mode: 'off', online: false, running: false, councils: [], groupIds: [] }))
+    if (paused) return Object.entries(readRegistry()).map(([instance, e]) => ({ instance, pubkey: '', name: displayName(instance), host: e.host, workdir: e.workdir, mode: 'off', online: false, running: false, councils: [], groupIds: [], sandbox: e.sandbox && { ...e.sandbox, lastViolations: [] } }))
     return [...agents.values()].map((a) => ({
       instance: a.instance,
       pubkey: a.engine.pubkey,
@@ -300,6 +339,7 @@ export async function runDaemon() {
       lastError: a.lastError,
       councils: a.engine.groups().map((g) => g.roster.name),
       groupIds: a.engine.groups().map((g) => g.id),
+      sandbox: a.entry.sandbox && { ...a.entry.sandbox, lastViolations: a.lastViolations, fellBack: a.fellBack },
     }))
   }
 
@@ -313,6 +353,7 @@ export async function runDaemon() {
       home: configRoot(),
       agents: agentInfo(),
       hosts: HOSTS.filter(isHost).map((id) => ({ id, label: LABEL[id], detected: found.has(id), seated: Object.values(reg).some((e) => e.host === id) })),
+      sandbox: availability,
     }
   }
 
@@ -335,10 +376,16 @@ export async function runDaemon() {
     for (const h of hosts) await stopAgent(`${h}#1`, 'seating again')
     const seated = seatAgents(ticket, hosts, installedRuntime())
     const reg = readRegistry()
-    writeRegistry({ ...reg, ...Object.fromEntries(seated.map(({ prepared: p }) => [p.instance, { host: p.host, workdir, addedAt: reg[p.instance]?.addedAt ?? Date.now() }])) })
+    // seating again keeps what the owner already granted; the batch checkbox only switches the sandbox on or off
+    const entry = (instance: string, host: string): RegistryEntry => {
+      const prev = reg[instance]
+      const sandbox = req.sandbox ? { ...EMPTY_SANDBOX_GRANTS, ...prev?.sandbox, enabled: true } : prev?.sandbox && { ...prev.sandbox, enabled: false }
+      return { host, workdir, addedAt: prev?.addedAt ?? Date.now(), ...(sandbox ? { sandbox } : {}) }
+    }
+    writeRegistry({ ...reg, ...Object.fromEntries(seated.map(({ prepared: p }) => [p.instance, entry(p.instance, p.host)])) })
     await load()
     log('seated from the app:', seated.map((s) => s.prepared.name).join(', '), 'in', workdir)
-    return { agents: seated.map(({ prepared: p }) => ({ instance: p.instance, name: p.name, host: p.host })) }
+    return { agents: seated.map(({ prepared: p }) => ({ instance: p.instance, name: p.name, host: p.host, pubkey: p.pubkey })) }
   }
 
   async function removeAgent(instance: string) {
@@ -365,6 +412,18 @@ export async function runDaemon() {
       const entry = reg[instance]
       if (!entry) throw new SeatError('unknown-agent', `No agent ${instance}`)
       writeRegistry({ ...reg, [instance]: { ...entry, workdir: workdirOf(workdir) } })
+      await load()
+    },
+    async setSandbox(instance, raw) {
+      const reg = readRegistry()
+      const entry = reg[instance]
+      if (!entry) throw new SeatError('unknown-agent', `No agent ${instance}`)
+      const enabled = typeof raw === 'object' && raw !== null && 'enabled' in raw ? raw.enabled : undefined
+      const check = validateGrants(raw, { home: homedir(), configRoot: configRoot() })
+      const problems = [...(typeof enabled === 'boolean' ? [] : ['enabled must be true or false']), ...(check.ok ? [] : check.errors.map((x) => `${x.field} ${x.value}: ${x.reason}`))]
+      if (!check.ok || typeof enabled !== 'boolean') throw new SeatError('not-allowed', `Not allowed: ${problems.join('; ')}`)
+      writeRegistry({ ...reg, [instance]: { ...entry, sandbox: { ...check.grants, enabled } } })
+      log(instance, `sandbox ${enabled ? 'on' : 'off'}`)
       await load()
     },
     async pause() {

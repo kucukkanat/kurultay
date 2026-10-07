@@ -24,6 +24,42 @@ export interface DaemonAgentInfo {
   lastError?: string
   councils: string[]
   groupIds: string[]
+  /** absent: never sandboxed (seated by `join`, or before sandboxes existed), which means off (docs/sandbox.md D8) */
+  sandbox?: AgentSandbox
+}
+
+/** What one sandboxed agent may reach besides its working folder. Local to the daemon: never sent over Nostr (D12). */
+export interface SandboxGrants {
+  /** hosts, `*.example.com` or `host:port` */
+  allowDomains: string[]
+  /** absolute (or `~/`) folders it may read */
+  readPaths: string[]
+  /** folders it may read and change, while its permission lets it edit */
+  writePaths: string[]
+}
+
+export interface SandboxConfig extends SandboxGrants {
+  enabled: boolean
+}
+
+export const EMPTY_SANDBOX_GRANTS: Readonly<SandboxGrants> = Object.freeze({ allowDomains: [], readPaths: [], writePaths: [] })
+
+/** Whether this machine can run sandboxes; `fix` is the command that makes it able to. */
+export type SandboxAvailability = { ok: true } | { ok: false; reason: string; fix?: string }
+
+/** Something the sandbox refused during a background turn. Shown to the owner only, never to the council (D34). */
+export interface SandboxViolation {
+  kind: 'read' | 'write' | 'network' | 'other'
+  target: string
+  /** ms since the epoch */
+  at: number
+}
+
+export interface AgentSandbox extends SandboxConfig {
+  /** recent refusals, one per kind and target, newest first */
+  lastViolations: SandboxViolation[]
+  /** the last turn should have been sandboxed but ran without it, and why (D6) */
+  fellBack?: string
 }
 
 export interface DaemonHostInfo {
@@ -43,6 +79,8 @@ export interface DaemonSnapshot {
   home: string
   agents: DaemonAgentInfo[]
   hosts: DaemonHostInfo[]
+  /** whether this machine can run sandboxes; an older daemon sends none, which the app treats as "can't" */
+  sandbox?: SandboxAvailability
 }
 
 export interface DaemonHealth {
@@ -57,10 +95,12 @@ export interface DaemonSeatRequest {
   ticket: string
   hosts: string[]
   workdir: string
+  /** keep the seated agents in a sandbox (one choice for the batch, D13); re-seating keeps existing grants */
+  sandbox?: boolean
 }
 
 export interface DaemonSeatResult {
-  agents: { instance: string; name: string; host: string }[]
+  agents: { instance: string; name: string; host: string; pubkey: string }[]
 }
 
 export interface DaemonDirListing {

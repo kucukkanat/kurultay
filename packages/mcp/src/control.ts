@@ -19,6 +19,8 @@ export interface ControlApi {
   seat(req: DaemonSeatRequest): Promise<DaemonSeatResult>
   removeAgent(instance: string): Promise<void>
   setWorkdir(instance: string, workdir: string): Promise<void>
+  /** `sandbox` is checked by the daemon (it knows the protected paths), so the route passes it on as it came */
+  setSandbox(instance: string, sandbox: unknown): Promise<void>
   pause(): Promise<void>
   resume(): Promise<void>
 }
@@ -130,11 +132,13 @@ export function startControl(api: ControlApi, pairing: Pairing, opts: { port: nu
     const body = await readBody(req)
     switch (path) {
       case '/seat':
-        return api.seat({ ticket: str(body.ticket, 'ticket'), hosts: Array.isArray(body.hosts) ? body.hosts.map(String) : [], workdir: str(body.workdir, 'workdir') })
+        return api.seat({ ticket: str(body.ticket, 'ticket'), hosts: Array.isArray(body.hosts) ? body.hosts.map(String) : [], workdir: str(body.workdir, 'workdir'), sandbox: body.sandbox === true })
       case '/agents/remove':
         return api.removeAgent(str(body.instance, 'instance')).then(() => ({ ok: true }))
       case '/agents/workdir':
         return api.setWorkdir(str(body.instance, 'instance'), str(body.workdir, 'workdir')).then(() => ({ ok: true }))
+      case '/agents/sandbox':
+        return api.setSandbox(str(body.instance, 'instance'), body.sandbox).then(() => ({ ok: true }))
       case '/daemon/pause':
         return api.pause().then(() => ({ ok: true }))
       case '/daemon/resume':

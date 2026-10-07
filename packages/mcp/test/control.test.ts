@@ -150,6 +150,26 @@ test('the app seats, moves, stops, starts and removes an agent', async () => {
   expect((await http('/agents/workdir', { body: { instance: 'codex#1', workdir: '/nope/nope' } })).status).toBe(400)
   expect((await http('/agents/workdir', { body: { instance: 'gemini#1', workdir: other } })).json.code).toBe('unknown-agent')
 
+  // the sandbox: the machine says whether it can run one; agents seated by the app may be kept in one (docs/sandbox.md)
+  expect((await state()).sandbox).toHaveProperty('ok')
+  expect((await state()).agents[0].sandbox).toBeUndefined()
+  const refusedGrants = await http('/agents/sandbox', { body: { instance: 'codex#1', sandbox: { enabled: 'yes', allowDomains: ['localhost', 'Docs.Example.com'], readPaths: ['~/.ssh', kHome], writePaths: 'nope' } } })
+  expect(refusedGrants.status).toBe(400)
+  expect(refusedGrants.json.code).toBe('not-allowed')
+  // every bad field at once, so the app can mark them all
+  for (const bad of ['enabled', 'allowDomains localhost', 'readPaths ~/.ssh', `readPaths ${kHome}`, 'writePaths']) expect(String(refusedGrants.json.error)).toContain(bad)
+  expect((await http('/agents/sandbox', { body: { instance: 'gemini#1', sandbox: { enabled: true, allowDomains: [], readPaths: [], writePaths: [] } } })).json.code).toBe('unknown-agent')
+  const grants = { enabled: true, allowDomains: ['Docs.Example.com'], readPaths: ['~/project'], writePaths: [] }
+  expect((await http('/agents/sandbox', { body: { instance: 'codex#1', sandbox: grants } })).status).toBe(200)
+  expect((await state()).agents[0].sandbox).toEqual({ enabled: true, allowDomains: ['docs.example.com'], readPaths: [work], writePaths: [], lastViolations: [] })
+  // seating again without the box keeps what was granted and only switches the sandbox off; with it, back on
+  const reseat = await http('/seat', { body: { ticket, hosts: ['codex'], workdir: work, sandbox: false } })
+  expect(reseat.json.agents).toEqual([expect.objectContaining({ instance: 'codex#1', pubkey: agentPk })])
+  expect(JSON.parse(readFileSync(join(kHome, 'agents.json'), 'utf8'))['codex#1'].sandbox).toEqual({ enabled: false, allowDomains: ['docs.example.com'], readPaths: [work], writePaths: [] })
+  await http('/seat', { body: { ticket, hosts: ['codex'], workdir: work, sandbox: true } })
+  expect(JSON.parse(readFileSync(join(kHome, 'agents.json'), 'utf8'))['codex#1'].sandbox.enabled).toBe(true)
+  await until(async () => (await state()).agents[0]?.online)
+
   expect((await http('/daemon/pause', { body: {} })).status).toBe(200)
   const paused = await state()
   expect(paused.paused).toBe(true)

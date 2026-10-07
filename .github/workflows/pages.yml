@@ -22,12 +22,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      # the sandbox integration tests run real sandboxes: Linux needs bubblewrap, socat and ripgrep, and Ubuntu 24.04
+      # must allow unprivileged user namespaces (docs/sandbox.md); without them those tests skip with the reason
+      - name: Sandbox tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap socat ripgrep
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - run: bun run test
 
   # Publishes the bundled MCP server to the `dist` branch so agents can run
   #   npx -y github:kucukkanat/kurultay#dist mcp      (any MCP host)
   #   pi install git:github.com/kucukkanat/kurultay@dist
-  # without an npm release. The bundle is a single file with zero dependencies.
+  # without an npm release. The bundle is one file with zero dependencies, plus the sandbox's helper programs in dist/vendor.
   dist-branch:
     if: github.event_name != 'pull_request'
     needs: test

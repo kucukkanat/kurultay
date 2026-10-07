@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from 'preact/hooks'
-import { DAEMON_PORT, type DaemonDirListing, type DaemonHealth, type DaemonSeatResult, type DaemonSnapshot, type PairPoll, type PairRequest } from '@kurultay/core'
+import { DAEMON_PORT, type DaemonDirListing, type DaemonHealth, type DaemonSeatResult, type DaemonSnapshot, type PairPoll, type PairRequest, type SandboxConfig } from '@kurultay/core'
 import { blocksLoopback, nextDelay, type DaemonStatus } from './daemon-search'
 
 /**
@@ -179,7 +179,9 @@ export async function unpair() {
 const command = <T>(path: string, body: unknown, timeout = 30_000) => request<T>(path, { body, timeout }).finally(() => void refresh())
 
 export const daemon = {
-  seat: (ticket: string, hosts: readonly string[], workdir: string) => command<DaemonSeatResult>('/seat', { ticket, hosts, workdir }, 60_000),
+  seat: (ticket: string, hosts: readonly string[], workdir: string, sandbox: boolean) => command<DaemonSeatResult>('/seat', { ticket, hosts, workdir, sandbox }, 60_000),
+  /** the service checks the grants again and refuses with "Not allowed: …" naming every bad field */
+  setSandbox: (instance: string, sandbox: SandboxConfig) => command('/agents/sandbox', { instance, sandbox }),
   removeAgent: (instance: string) => command('/agents/remove', { instance }),
   setWorkdir: (instance: string, workdir: string) => command('/agents/workdir', { instance, workdir }),
   pause: () => command('/daemon/pause', {}),

@@ -1,6 +1,6 @@
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { decodeTicket, DEFAULT_RELAYS, Kurultay, type AgentTicket } from '@kurultay/core'
 import { configRoot, FileStorage } from './instance'
 import { detectHosts, HOSTS, type Host } from './install'
@@ -64,7 +64,12 @@ its own identity verified as yours, and seats it in the ticket's councils.`)
   if (/\.m?js$/.test(self)) {
     runtime = join(configRoot(), 'bin', 'kurultay.mjs')
     mkdirSync(join(configRoot(), 'bin'), { recursive: true })
-    if (resolve(self) !== resolve(runtime)) copyFileSync(self, runtime)
+    if (resolve(self) !== resolve(runtime)) {
+      copyFileSync(self, runtime)
+      // the sandbox's helper programs travel beside the bundle (docs/sandbox.md); an older bundle has none
+      const vendor = join(dirname(self), 'vendor')
+      if (existsSync(vendor)) cpSync(vendor, join(configRoot(), 'bin', 'vendor'), { recursive: true })
+    }
   }
 
   const where = ticket.groups.length ? ticket.groups.map((g) => '#' + g.name).join(', ') : 'no councils yet'

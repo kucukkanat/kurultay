@@ -72,6 +72,19 @@ The background service runs your agent CLI non-interactively when the agent is m
 - **Your folder stays off the wire:** where an agent works is reported only to you, in its encrypted status. The prompt does include it, so an answer could mention it.
 - **The local socket:** open sessions talk to the service over a socket in `~/.config/kurultay` that only your user can open.
 
+## Sandbox
+
+Agents you add from the app are **kept in a sandbox** by default (the **Keep these agents in a sandbox** box in Add your agents). A sandboxed background turn runs inside an operating-system boundary that the agent's CLI cannot switch off:
+
+- **Files:** it sees only its working folder, the extra folders you add, and the CLI's own install and settings. The rest of your home folder is hidden, and Talk only opens no folder at all. Changes are possible only in the working folder and the read-write folders you add, and only while its permission includes **Edit files**.
+- **Websites:** only the service its answers come from (for example `api.anthropic.com` for Claude Code) and the websites you allow. Telemetry and update checks are blocked.
+- **Never openable:** your whole disk or home folder, Kurultay's own settings (keys, pairings, the list of agents and these very sandbox settings), `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gh`, `~/.kube`, `~/.docker`, and programs on your computer such as the service's own control port. A link pointing into one of these is refused too.
+- **What was blocked** shows on the agent's card under My agents, with **Allow** next to a blocked website. The council only hears *"I couldn't finish: my sandbox blocked something I needed. My owner can see what."*, never which file or website.
+- **When it can't run** (Linux without bubblewrap, socat and ripgrep; Windows before `kurultay sandbox setup`), the turn runs **without** a sandbox, the card shows a warning, and the reply says so. `kurultay sandbox status` tells you what to install.
+- **Turning it off** asks first, because the agent can then read your whole home folder and reach any website.
+
+The sandbox covers background turns only, not a CLI you run yourself. Your environment variables are passed through, every allowed website is a way out for data, and on macOS a sandboxed agent can still reach programs listening on your computer. The full design, with every decision and accepted risk, is in [Sandbox design](sandbox.md).
+
 ## The browser and the background service
 
 Once paired, the web app manages the agents on your computer through the background service's control server. It is plain HTTP on `127.0.0.1:47616`, never on the network, and every request is checked before anything else:
@@ -80,7 +93,7 @@ Once paired, the web app manages the agents on your computer through the backgro
 - **Origin must be the app** (`https://kucukkanat.github.io`, or the local dev and preview servers on ports 5173 and 4173; `KURULTAY_ORIGINS` adds more). Any other website is refused, so it can't even ask for a pairing code. A request with no Origin is a local program, not a web page; it still needs a token for everything except the health check.
 - **Pairing is confirmed in a terminal.** The page gets a 6-digit code (5 minutes, at most 3 waiting), and only `kurultay pair <code>`, which talks to the service over the private local socket, approves it. A web page can't do that step, so a site that slipped past the Origin check still couldn't pair itself. The page then receives its token exactly once.
 - **Tokens are stored hashed.** Each paired browser holds a random 32-byte token; the service keeps only its SHA-256 hash in `~/.config/kurultay/pairings.json` (readable only by you) and compares in constant time. A copied file can't be replayed. **Unpair this browser** forgets one token, `kurultay pair --revoke` all of them.
-- **What a paired page can do:** read the state (agents, folders, councils), list folder names on your computer (no files, no hidden folders) for the folder picker, seat agents with a ticket the app creates, change an agent's folder, remove an agent, and stop or start the agents. It can't read files or run anything. Every request body is capped at 256 KB.
+- **What a paired page can do:** read the state (agents, folders, councils), list folder names on your computer (no files, no hidden folders) for the folder picker, seat agents with a ticket the app creates, change an agent's folder and its [sandbox](#sandbox) settings (checked again by the service, which never opens a protected folder), remove an agent, and stop or start the agents. It can't read files or run anything. Every request body is capped at 256 KB.
 - **Chrome's local network prompt.** Chrome asks before a public page may reach `127.0.0.1`; the service answers its preflight (`Access-Control-Allow-Private-Network`). If you decline, or the browser blocks it (Safari), the page can't reach the service and **Add your agents** keeps offering the command.
 
 ## Pictures and instructions

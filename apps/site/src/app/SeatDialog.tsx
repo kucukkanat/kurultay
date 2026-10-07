@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'preact/hooks'
-import { decodeTicket, type DaemonSnapshot, type Kurultay } from '@kurultay/core'
+import { decodeTicket, DEFAULT_AGENT_MODE, type DaemonSnapshot, type Kurultay } from '@kurultay/core'
 import { daemon } from './daemon-client'
 import { FolderPicker } from './DaemonPanel'
 import { toast, useStore } from './store'
-import { Icon, Modal } from './ui'
+import { initialMode, SANDBOX_COPY } from './sandbox'
+import { CopyField, Icon, Modal } from './ui'
 
 /** localStorage key for the agent CLIs last seated; the command fallback in agents.tsx reads it too */
 export const HOSTS_KEY = 'kurultay:hosts'
@@ -38,6 +39,10 @@ export function SeatDialog({ e, groupId, onClose, snap }: { e: Kurultay; groupId
     return typeof last === 'string' ? last : (snap.agents[0]?.workdir ?? '')
   })
   const [busy, setBusy] = useState(false)
+  // one choice for the whole batch, on by default (D13); per-agent changes happen later under My agents
+  const [sandbox, setSandbox] = useState(true)
+  // an older service sends no `sandbox`: treat that as "can't", so the owner is never told it is safe when it isn't
+  const availability = snap.sandbox ?? { ok: false as const, reason: SANDBOX_COPY.seatOld }
   const [ticketId, setTicketId] = useState<string>()
   // an empty folder defaults to the home folder of the computer the service runs on, which only it knows
   useEffect(() => {
@@ -50,7 +55,11 @@ export function SeatDialog({ e, groupId, onClose, snap }: { e: Kurultay; groupId
     setBusy(true)
     try {
       const ticket = e.createTicket(picked, { hosts })
-      await daemon.seat(ticket, hosts, folder.trim())
+      const result = await daemon.seat(ticket, hosts, folder.trim(), sandbox)
+      // D20: the first permission travels like any later change (agent_settings). Only a fresh agent gets it: seating
+      // again must never widen what the owner already chose
+      const mode = initialMode(sandbox)
+      if (mode !== DEFAULT_AGENT_MODE) for (const a of result.agents) if (!e.state.agentModes?.[a.pubkey]) await e.setAgentMode(a.pubkey, mode).catch((err: Error) => toast(err.message, 'error'))
       setTicketId(decodeTicket(ticket).id)
       remember(WORKDIR_KEY, folder.trim())
       remember(HOSTS_KEY, hosts)
@@ -95,6 +104,26 @@ export function SeatDialog({ e, groupId, onClose, snap }: { e: Kurultay; groupId
           <p class="muted">No council yet: they are set up and wait for you to invite them.</p>
         )}
       </fieldset>
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" checked={sandbox} onChange={(ev) => setSandbox((ev.target as HTMLInputElement).checked)} data-testid="seat-sandbox" />
+          <span>
+            {SANDBOX_COPY.seatLabel}
+            <small>{SANDBOX_COPY.seatHelp}</small>
+          </span>
+        </label>
+        {sandbox && !availability.ok && (
+          <div class="sandbox-note warn" data-testid="seat-sandbox-unavailable">
+            <p>
+              {SANDBOX_COPY.seatUnavailable} {availability.reason}
+            </p>
+            {availability.fix && <CopyField value={availability.fix} label={SANDBOX_COPY.seatFix} />}
+          </div>
+        )}
+      </div>
+      <p class="muted small-note" data-testid="seat-start-mode">
+        {sandbox ? SANDBOX_COPY.startsEdit : SANDBOX_COPY.startsTalk}
+      </p>
       {seated.length > 0 && (
         <ul class="seat-status" data-testid="seat-progress">
           {seated.map((s) => (
@@ -104,7 +133,6 @@ export function SeatDialog({ e, groupId, onClose, snap }: { e: Kurultay; groupId
           ))}
         </ul>
       )}
-      {ticketId && <p class="muted small-note">They start as “Talk only”. Choose what they may do in that folder under My agents.</p>}
       <div class="row end">
         <button class="btn" type="button" onClick={onClose} data-testid="seat-close">
           {ticketId ? 'Done' : 'Close'}

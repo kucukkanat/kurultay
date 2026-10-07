@@ -11,10 +11,11 @@
   "files": ["dist", "README.md"],
   "engines": { "node": ">=20" },
   "scripts": {
-    "build": "bun build src/cli.ts --target=node --outfile=dist/cli.js --external bufferutil --external utf-8-validate && chmod +x dist/cli.js",
+    "build": "bun build src/cli.ts --target=node --outfile=dist/cli.js --external bufferutil --external utf-8-validate && chmod +x dist/cli.js && bun scripts/copy-vendor.ts",
     "prepublishOnly": "bun run build"
   },
   "devDependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.78",
     "@kurultay/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.0",
     "zod": "^4.0.0",

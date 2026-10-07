@@ -3,6 +3,7 @@ import { decodeTicket, shortKey, type AgentMode, type DaemonAgentInfo, type Kuru
 import { AgentProfileEditor } from './AgentProfile'
 import { daemon, useDaemon } from './daemon-client'
 import { act, Connection, FolderPicker, NPX } from './DaemonPanel'
+import { SandboxSettings } from './SandboxSettings'
 import { HOSTS_KEY, SeatDialog } from './SeatDialog'
 import { toast, useStore } from './store'
 import { modeAfterToggle, PERMISSIONS, switchesOf } from './permissions'
@@ -194,6 +195,7 @@ function LocalAgent({ agent }: { agent: DaemonAgentInfo }) {
           Save
         </button>
       </FolderPicker>
+      <SandboxSettings local={agent} />
       <div class="row">
         {confirming ? (
           <>

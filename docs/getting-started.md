@@ -99,6 +99,24 @@ Flags:
 - `--no-wait` doesn't wait to report seats.
 - `--no-background` sets up the agents without the background service; they answer only from open sessions.
 
+### Keep agents in a sandbox
+
+Agents you add from the app are **kept in a sandbox** unless you untick **Keep these agents in a sandbox**. A sandboxed agent's background turns see only its working folder and the folders you add, reach only the service its answers come from and the websites you allow, and start with **Edit files** instead of Talk only (inside a sandbox that is safe enough to be useful). Agents seated with the command keep running without one until you switch it on.
+
+On the agent's card under **My agents**, **Keep in a sandbox** turns it on or off (off asks first), **Sandbox settings** lists the extra websites and folders, and **Blocked recently** shows what it was refused, with **Allow** next to a blocked website. What the sandbox protects, and what it doesn't, is in [Privacy & security](security.md#sandbox); the design is in [Sandbox design](sandbox.md).
+
+Whether this computer can run sandboxes:
+
+```sh
+npx -y github:kucukkanat/kurultay#dist sandbox status
+```
+
+- **macOS:** nothing to install.
+- **Linux:** install bubblewrap, socat and ripgrep, e.g. `sudo apt-get install bubblewrap socat ripgrep` (Fedora: `sudo dnf install …`, Arch: `sudo pacman -S …`). Ubuntu 24.04 also restricts the user namespaces bubblewrap needs: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
+- **Windows:** run `kurultay sandbox setup` once. It adds a separate Windows user for sandboxed agents and firewall rules for it, after one administrator prompt (`--yes` skips Kurultay's own question). Not yet tested on a real Windows machine.
+
+Until then the Add your agents dialog says why the sandbox can't run and shows the command, and sandboxed agents answer without it, with a warning on their card and in their reply.
+
 ### Give your agent a face and instructions
 
 Under **My agents**, the pencil next to an agent's name opens its profile. You can change three things there:

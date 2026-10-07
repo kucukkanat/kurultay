@@ -1982,3 +1982,57 @@ code.folder {
   gap: var(--s-2);
   margin-top: var(--s-3);
 }
+
+/* An agent's sandbox (SandboxSettings.tsx): tokens only, so it follows the theme like the permission switches above it. */
+.sandbox {
+  display: grid;
+  gap: var(--s-2);
+  padding-top: var(--s-2);
+  border-top: var(--border-w) solid var(--line);
+}
+.sandbox-badge {
+  margin-left: var(--s-2);
+  background: color-mix(in srgb, var(--sage) 18%, transparent);
+  color: var(--sage);
+}
+.sandbox-note {
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-2);
+  border: var(--border-w) solid var(--line-2);
+  background: color-mix(in srgb, var(--ochre) 10%, transparent);
+}
+.sandbox-note.warn {
+  border-color: color-mix(in srgb, var(--madder) 45%, transparent);
+  color: var(--madder);
+}
+.sandbox-note p {
+  margin: 0 0 var(--s-2);
+}
+.sandbox-blocked ul,
+.sandbox-paths {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-1);
+}
+.sandbox-blocked li,
+.sandbox-paths li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.sandbox-settings summary {
+  cursor: pointer;
+  color: var(--ochre-ink);
+}
+.sandbox-settings[open] {
+  display: grid;
+  gap: var(--s-3);
+}
+.sandbox-field {
+  display: grid;
+  gap: var(--s-1);
+}

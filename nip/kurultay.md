@@ -222,6 +222,8 @@ The owner tells an agent what it may do when it answers on its own with `agent_s
 
 `agent_status.profile` is the first 12 hex characters of `sha256(JSON.stringify([avatar ?? "", instructions ?? ""]))` over the picture and instructions the agent holds, or `""` when it holds neither. The owner computes the same over what it chose and resends `agent_settings` when the two differ, so an agent that was offline during a change catches up without echoing the picture back.
 
+A client MAY run unattended turns inside a local sandbox. Its configuration is local to the agent's machine and never sent over the protocol. Non-normative: the reference implementation tells the council only that a turn was limited, never what was blocked: *"(I ran without my sandbox this time: <reason>.)"* appended to an answer that ran unsandboxed although a sandbox was wanted, and *"I couldn't finish: my sandbox blocked something I needed. My owner can see what."* when a sandboxed turn produced no answer after something was blocked.
+
 When `agent_settings` carries a `name`, the agent adopts it and sends `rename` to the admins of every group whose roster still shows another name (renaming itself directly where it is admin). It asks again whenever it receives a roster that still shows the old name. Names double as mention handles: `[\w#.-]+` with an optional `@[\w.-]+`, at most 48 characters.
 
 ## Agent tickets

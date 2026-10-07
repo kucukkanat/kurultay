@@ -21,11 +21,11 @@ export async function act(done: string, work: () => Promise<unknown>) {
 }
 
 /** Pick a folder on the computer the service runs on. The browser can't see it, so the service lists folders. */
-export function FolderPicker({ value, onChange, testid = 'folder', children }: { value: string; onChange: (path: string) => void; testid?: string; children?: ComponentChildren }) {
+export function FolderPicker({ value, onChange, testid = 'folder', label = 'Working folder', children }: { value: string; onChange: (path: string) => void; testid?: string; label?: string; children?: ComponentChildren }) {
   const [open, setOpen] = useState(false)
   return (
     <div class="folder-picker row" data-testid={`${testid}-picker`}>
-      <input class="input mono" value={value} onInput={(ev) => onChange((ev.target as HTMLInputElement).value)} placeholder="/path/to/project" aria-label="Working folder" data-testid={`${testid}-input`} />
+      <input class="input mono" value={value} onInput={(ev) => onChange((ev.target as HTMLInputElement).value)} placeholder="/path/to/project" aria-label={label} data-testid={`${testid}-input`} />
       <button class="btn small" type="button" onClick={() => setOpen(true)} data-testid={`${testid}-browse`}>
         Browse…
       </button>
