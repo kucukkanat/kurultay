@@ -37,6 +37,9 @@
   --thread-w: 380px;
   --z-drawer: 30;
   --avatar-picker-gap: 14px;
+  --toggle-w: 40px;
+  --toggle-h: 24px;
+  --toggle-pad: 3px;
   color-scheme: light;
 }
 

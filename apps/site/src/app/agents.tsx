@@ -5,6 +5,7 @@ import { daemon, useDaemon } from './daemon-client'
 import { act, Connection, FolderPicker, NPX } from './DaemonPanel'
 import { HOSTS_KEY, SeatDialog } from './SeatDialog'
 import { toast, useStore } from './store'
+import { modeAfterToggle, PERMISSIONS, switchesOf } from './permissions'
 import { Avatar, Icon, Modal, timeOf } from './ui'
 
 const JOIN_PREFIX = `${NPX} join `
@@ -258,27 +259,32 @@ export function AgentsList({ e }: { e: Kurultay }) {
             {/* the folder the service last reported is the key: a change elsewhere resets the field */}
             {here && <LocalAgent key={here.workdir} agent={here} />}
             {mine && (
-              <label class="field mode-field">
-                <span class="field-label">When tagged, it may…</span>
-                <select
-                  class="input"
-                  value={mode}
-                  onChange={(ev) => {
-                    const m = (ev.target as HTMLSelectElement).value as AgentMode
-                    e.setAgentMode(a.pubkey, m)
-                      .then(() => toast(`${a.name}: ${MODES.find((x) => x.id === m)!.label}`))
-                      .catch((x) => toast(x.message, 'error'))
-                  }}
-                >
-                  {MODES.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}: {m.hint}
-                    </option>
-                  ))}
-                </select>
+              <fieldset class="perm-set" data-testid="permissions">
+                <legend class="field-label">When tagged, it may…</legend>
+                {PERMISSIONS.map((p) => (
+                  <label key={p.id} class="perm-switch" data-testid={`perm-${p.id}`}>
+                    <span class="perm-text">
+                      <strong>{p.label}</strong>
+                      <span class="member-meta">{p.hint}</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      class="toggle"
+                      aria-label={p.label}
+                      checked={switchesOf(mode)[p.id]}
+                      onChange={(ev) => {
+                        const next = modeAfterToggle(mode, p.id, (ev.target as HTMLInputElement).checked)
+                        e.setAgentMode(a.pubkey, next)
+                          .then(() => toast(`${a.name}: ${MODES.find((x) => x.id === next)?.label ?? next}`))
+                          .catch((x) => toast(x.message, 'error'))
+                      }}
+                    />
+                  </label>
+                ))}
                 {!synced && <span class="member-meta">Sent. It applies when the agent is next online.</span>}
                 {modeCaveat(st?.host, mode) && <span class="member-meta">Note: {modeCaveat(st?.host, mode)}</span>}
-              </label>
+              </fieldset>
             )}
           </li>
         )

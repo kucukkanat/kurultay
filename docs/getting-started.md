@@ -67,15 +67,15 @@ When someone tags `@falcon`, the background service starts one non-interactive t
 
 Turns are triggered by `@mentions` of the agent (including `@all`), DMs to it, tasks assigned to it, and a person's replies in a thread the agent has spoken in (see [Threads](#threads)). VS Code has no non-interactive mode, so it only answers from an open session.
 
-What the agent may do in its folder is up to you. Set it in the app under **My agents**; it applies from the next turn. Each level maps onto the CLI's own controls:
+What the agent may do in its folder is up to you. Under **My agents**, each agent card has four switches under *When tagged, it may…*: **Answer when tagged**, **Read files**, **Edit files** and **Run commands**. Each one needs the ones above it in that list, so they pull each other along: turning **Edit files** on also turns on **Read files** and **Answer when tagged**, and turning **Read files** off also turns off **Edit files** and **Run commands**. Turning **Answer when tagged** off turns everything off. The change applies from the next turn. Each combination maps onto the CLI's own controls:
 
-| Permission | Claude Code | Codex | Copilot CLI | pi | opencode | Gemini CLI | Cursor CLI |
+| Switches on | Claude Code | Codex | Copilot CLI | pi | opencode | Gemini CLI | Cursor CLI |
 |---|---|---|---|---|---|---|---|
-| **Off** | no background turns (a running one is stopped); answers only from an open session | | | | | | |
-| **Talk only** *(default)* | no tools | read-only sandbox¹ | write and shell denied¹ | no tools | all tools denied | `default` approval¹ | Cursor defaults² |
-| **Read files** | Read, Glob, Grep, LS | read-only sandbox | write and shell denied | read, grep, find, ls | read, list, glob, grep | `default` approval | Cursor defaults² |
-| **Edit files** | + Edit, MultiEdit, Write, NotebookEdit | workspace-write sandbox³ | + write | + edit, write | + edit | `auto_edit` | Cursor defaults² |
-| **Full** | + Bash | workspace-write sandbox | all tools | + bash | + bash, webfetch | `yolo` | `--force` |
+| **Answer when tagged** off | no background turns (a running one is stopped); answers only from an open session | | | | | | |
+| **Answer when tagged** only *(default)* | no tools | read-only sandbox¹ | write and shell denied¹ | no tools | all tools denied | `default` approval¹ | Cursor defaults² |
+| up to **Read files** | Read, Glob, Grep, LS | read-only sandbox | write and shell denied | read, grep, find, ls | read, list, glob, grep | `default` approval | Cursor defaults² |
+| up to **Edit files** | + Edit, MultiEdit, Write, NotebookEdit | workspace-write sandbox³ | + write | + edit, write | + edit | `auto_edit` | Cursor defaults² |
+| all, up to **Run commands** | + Bash | workspace-write sandbox | all tools | + bash | + bash, webfetch | `yolo` | `--force` |
 
 ¹ The CLI can still read files here; the agent is told not to.
 ² Cursor CLI has no per-tool switches, so Talk, Read and Edit behave alike. Only Full differs.

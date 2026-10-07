@@ -1607,11 +1607,70 @@ code.folder {
   display: grid;
   gap: 6px;
 }
-.mode-field {
-  margin: 12px 0 0;
+.perm-set {
+  border: 0;
+  margin: var(--s-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-1);
 }
-.mode-field select {
-  max-width: 100%;
+.perm-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: var(--border-w) solid var(--line);
+  cursor: pointer;
+}
+.perm-set .perm-switch:last-of-type {
+  border-bottom: 0;
+}
+.perm-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+/* a checkbox drawn as a sliding switch; the knob travels the track minus its own size and padding */
+.toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: var(--toggle-w);
+  height: var(--toggle-h);
+  margin: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--line-2);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: var(--toggle-pad);
+  left: var(--toggle-pad);
+  width: calc(var(--toggle-h) - 2 * var(--toggle-pad));
+  height: calc(var(--toggle-h) - 2 * var(--toggle-pad));
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  transition: transform 0.15s;
+}
+.toggle:checked {
+  background: var(--ochre);
+}
+.toggle:checked::after {
+  transform: translateX(calc(var(--toggle-w) - var(--toggle-h)));
+}
+.toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.toggle:focus-visible {
+  outline: 2px solid var(--ochre);
+  outline-offset: 2px;
 }
 
 /* ------------------------------------------------------------------ attachments */
