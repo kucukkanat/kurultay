@@ -39,6 +39,12 @@ describe('cleanInstructions', () => {
     expect(cleanInstructions('   ')).toBeUndefined()
     expect(cleanInstructions(7)).toBeUndefined()
   })
+
+  test('is idempotent, even when the cut lands on whitespace', () => {
+    const once = cleanInstructions('x'.repeat(MAX_INSTRUCTIONS_CHARS - 1) + '   tail')
+    expect(once).toBe('x'.repeat(MAX_INSTRUCTIONS_CHARS - 1))
+    expect(cleanInstructions(once)).toBe(once)
+  })
 })
 
 describe('profileRev', () => {
@@ -158,4 +164,63 @@ describe('agent profiles over the wire', () => {
     const again = await boot(sk, storage)
     expect(again.card.avatar).toBe(PNG)
   })
+
+  /**
+   * Counts the settings an agent receives; `report` answers each one with a status, as the daemon does. It waits a
+   * second first: events are stamped in seconds, so a resend inside the same second is the same event and deduplicated.
+   */
+  function answerSettings(agent: Kurultay, report: () => Promise<void>) {
+    let got = 0
+    agent.on('settings', () => {
+      got++
+      void Bun.sleep(1100).then(report)
+    })
+    return () => got
+  }
+
+  test('an agent that cannot keep its profile gets settings resent once, not forever', async () => {
+    const { owner, agent } = await setup()
+    // the agent forgets the picture after every settings, so its fingerprint never matches the owner's
+    const settings = answerSettings(agent, async () => {
+      agent.state.agentSettings = { mode: agent.agentMode, updatedAt: Date.now() }
+      await agent.reportStatus({ background: true, headless: true })
+    })
+    await owner.setAgentProfile(agent.pubkey, { avatar: PNG, instructions: 'x'.repeat(MAX_INSTRUCTIONS_CHARS - 1) + '  y' })
+    await Bun.sleep(4000)
+    // the owner's own send, then one resend for the stale report
+    expect(settings()).toBe(2)
+  }, 10_000)
+
+  test('an agent from before profiles (no fingerprint) is never sent settings for its profile', async () => {
+    const { owner, agent } = await setup()
+    // what a 0.7.0 agent sends: a status without `profile`
+    const oldAgent = agent as unknown as { sendInbox: (to: string, inbox: string, env: unknown) => Promise<void> }
+    const owned = agent.state.owner
+    if (!owned) throw new Error('agent has no owner')
+    const report = () => oldAgent.sendInbox(owned.pubkey, owned.inbox, { type: 'agent_status', status: { background: true, headless: true, mode: agent.agentMode, name: agent.name } })
+    const settings = answerSettings(agent, report)
+    await owner.setAgentProfile(agent.pubkey, { avatar: PNG })
+    await Bun.sleep(3000)
+    expect(settings()).toBe(1)
+    expect(owner.state.agentStatus?.[agent.pubkey]?.profile).toBeUndefined()
+  }, 10_000)
+
+  test('two owner engines with different profiles stop trading settings', async () => {
+    const { owner, agent } = await setup()
+    // a second tab of the same owner (same key and stored state, so the same inbox) that chose other instructions
+    const shared = new MemoryStorage()
+    shared.save(owner.state)
+    const tab = new Kurultay({ sk: owner.sk, name: 'owner', kind: 'human', relays: [relay.url], storage: shared, presenceInterval: 3_600_000 })
+    peers.push(tab)
+    await tab.start()
+    await until(() => tab.pool.relays.every((r) => r.status === 'open'))
+    const settings = answerSettings(agent, () => agent.reportStatus({ background: true, headless: true }))
+    await tab.setAgentProfile(agent.pubkey, { instructions: 'Tab two.' })
+    await owner.setAgentProfile(agent.pubkey, { avatar: PNG })
+    await Bun.sleep(7000)
+    const settled = settings()
+    expect(settled).toBeLessThanOrEqual(6)
+    await Bun.sleep(2500)
+    expect(settings()).toBe(settled)
+  }, 15_000)
 })

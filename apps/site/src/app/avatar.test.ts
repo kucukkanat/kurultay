@@ -17,9 +17,14 @@ test('the generated avatar is only an image: no scripts, handlers or external re
   for (const seed of ['x', 'claude@laptop', 'bold-otter']) expect(svgOf(gazeAvatar(seed))).not.toMatch(/<script|\son\w+=|href="http|xlink:href|@import/i)
 })
 
-// cropping and re-encoding need a real canvas, which Bun lacks; only the type check runs here
+// cropping and re-encoding need a real canvas, which Bun lacks; only the checks before it run here
 test('a file that is not an image is refused with a typed error', async () => {
   const notes = new File(['hello'], 'notes.txt', { type: 'text/plain' })
   await expect(pictureFromFile(notes)).rejects.toBeInstanceOf(AvatarError)
   await expect(pictureFromFile(notes)).rejects.toThrow('Choose an image file')
+})
+
+test('an image file that cannot be decoded is refused with a typed error, not an unhandled rejection', async () => {
+  const broken = new File(['not really a png'], 'broken.png', { type: 'image/png' })
+  await expect(pictureFromFile(broken)).rejects.toThrow(new AvatarError('That picture could not be read. Try a PNG, JPEG or WebP.'))
 })

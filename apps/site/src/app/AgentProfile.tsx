@@ -1,6 +1,6 @@
 import { useRef, useState } from 'preact/hooks'
 import { cleanName, MAX_INSTRUCTIONS_CHARS, profileRev, type Kurultay } from '@kurultay/core'
-import { AvatarError, pictureFromFile } from './avatar'
+import { AvatarError, PICTURE_TYPES, pictureFromFile } from './avatar'
 import { toast } from './store'
 import { Avatar, Icon } from './ui'
 
@@ -42,7 +42,7 @@ export function AvatarPicker({ name, value, onChange }: { name: string; value?: 
       <input
         ref={input}
         type="file"
-        accept="image/*"
+        accept={PICTURE_TYPES}
         class="sr-only"
         tabIndex={-1}
         data-testid="avatar-file"
@@ -85,8 +85,10 @@ export function AgentProfileEditor({ e, pubkey, current }: { e: Kurultay; pubkey
   const avatar = e.state.agentAvatars?.[pubkey]
   const instructions = e.state.agentInstructions?.[pubkey]
   const reported = e.state.agentStatus?.[pubkey]
-  // the agent reports a fingerprint of the profile it holds; a different one means it has not applied ours yet
-  const pending = (!!wanted && wanted !== current) || (!!reported && (reported.profile ?? '') !== profileRev(avatar, instructions))
+  // the agent reports a fingerprint of the profile it holds; a different one means it has not applied ours yet.
+  // No fingerprint at all means it predates profiles: waiting will not help, only updating it will.
+  const outdated = reported?.profile === undefined && !!reported && !!(avatar || instructions)
+  const pending = (!!wanted && wanted !== current) || (reported?.profile !== undefined && reported.profile !== profileRev(avatar, instructions))
   const clean = draft && cleanName(draft.name)
   const update = (patch: Partial<Draft>) => setDraft((d) => d && { ...d, ...patch })
 
@@ -98,6 +100,12 @@ export function AgentProfileEditor({ e, pubkey, current }: { e: Kurultay; pubkey
           <Icon name="pencil" size={14} />
         </button>
         {pending && <span class="member-meta"> → {wanted && wanted !== current ? `${wanted}, ` : ''}applies when it’s next online</span>}
+        {outdated && (
+          <span class="member-meta" data-testid="agent-profile-outdated">
+            {' '}
+            · its Kurultay is too old for a picture or instructions: update it where it runs
+          </span>
+        )}
       </div>
     )
 

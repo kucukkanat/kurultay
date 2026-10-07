@@ -23,6 +23,9 @@ export function gazeAvatar(seed: string): string {
 }
 
 const SIZE = 96
+/** what the picker offers: formats every browser decodes (SVG never, see cleanAvatar) */
+export const PICTURE_TYPES = 'image/png,image/jpeg,image/webp,image/gif'
+const UNREADABLE = 'That picture could not be read. Try a PNG, JPEG or WebP.'
 const ENCODINGS = [['image/webp', 0.8], ['image/webp', 0.6], ['image/webp', 0.4], ['image/png', undefined]] as const
 
 /**
@@ -31,7 +34,12 @@ const ENCODINGS = [['image/webp', 0.8], ['image/webp', 0.6], ['image/webp', 0.4]
  */
 export async function pictureFromFile(file: File): Promise<string> {
   if (!file.type.startsWith('image/')) throw new AvatarError('Choose an image file')
-  const bitmap = await createImageBitmap(file)
+  // SVG, HEIC or a broken file passes the type check and fails here; say so instead of doing nothing
+  const bitmap = await Promise.resolve(file)
+    .then((f) => createImageBitmap(f))
+    .catch(() => {
+      throw new AvatarError(UNREADABLE)
+    })
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = SIZE
   const ctx = canvas.getContext('2d')

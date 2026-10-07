@@ -205,6 +205,8 @@ export class Kurultay extends Emitter<EngineEvents> {
   private saveTimer?: ReturnType<typeof setTimeout>
   private tagMap = new Map<string, { channel: 'inbox' } | { channel: 'group'; groupId: string; key: string }>()
   private sendLog = new Map<string, number[]>()
+  /** owner: the last status that made me resend an agent its settings (see agent_status) */
+  private settingsResent = new Map<string, string>()
   private recvLog = new Map<string, number[]>()
   private boardSendLog = new Map<string, number[]>()
   private boardRecvLog = new Map<string, number[]>()
@@ -651,8 +653,17 @@ export class Kurultay extends Emitter<EngineEvents> {
         // the agent came online with an older setting than the one I chose: send mine again
         const want = this.state.agentModes?.[from]
         const wantName = this.state.agentNames?.[from]
-        const profileStale = (env.status.profile ?? '') !== profileRev(this.state.agentAvatars?.[from], this.state.agentInstructions?.[from])
-        if ((want && want !== env.status.mode) || (wantName && env.status.name && wantName !== env.status.name) || profileStale) void this.sendAgentSettings(from)
+        const wantRev = profileRev(this.state.agentAvatars?.[from], this.state.agentInstructions?.[from])
+        const got = env.status
+        // agents from before profiles never report one and cannot apply ours: resending to them would never settle
+        const stale = (want && want !== got.mode) || (wantName && got.name && wantName !== got.name) || (got.profile !== undefined && got.profile !== wantRev)
+        // the agent answers every settings with a status, so resend once per (reported, chosen) pair: an agent that
+        // cannot keep what we send, or two owner tabs that chose differently, would otherwise trade them forever
+        const pair = JSON.stringify([got.mode, got.name, got.profile, want, wantName, wantRev])
+        if (stale && this.settingsResent.get(from) !== pair) {
+          this.settingsResent.set(from, pair)
+          void this.sendAgentSettings(from)
+        }
         this.changed('agent-status')
         return
       }

@@ -96,3 +96,31 @@ test('an invalid name keeps Save disabled', async () => {
   expect(byId('agent-profile-form').textContent).toContain('Letters, digits and _ # . - only')
   root.remove()
 })
+
+test('an agent that reports no profile fingerprint (from before profiles) is told to update, not "pending"', async () => {
+  const { owner, pubkey, root, rerender } = await mountEditor()
+  await owner.setAgentProfile(pubkey, { instructions: 'Review PRs.' })
+  owner.state.agentStatus = { [pubkey]: { background: true, headless: true, mode: 'talk', name: 'claude', at: Date.now() } }
+  rerender()
+  expect(byId('agent-profile-outdated').textContent).toContain('update it where it runs')
+  expect(root.textContent).not.toContain('applies when it’s next online')
+  // one that does report a fingerprint, but an old one, is still catching up
+  owner.state.agentStatus = { [pubkey]: { background: true, headless: true, mode: 'talk', name: 'claude', profile: '', at: Date.now() } }
+  rerender()
+  expect(document.querySelector('[data-testid="agent-profile-outdated"]')).toBeNull()
+  expect(root.textContent).toContain('applies when it’s next online')
+  root.remove()
+})
+
+test('an image file that cannot be decoded shows the error inline instead of failing silently', async () => {
+  const { root } = await mountEditor()
+  byId('agent-profile-edit').click()
+  await settle()
+  const input = byId<HTMLInputElement>('avatar-file')
+  expect(input.accept).toBe('image/png,image/jpeg,image/webp,image/gif')
+  Object.defineProperty(input, 'files', { configurable: true, value: [new File(['not really a png'], 'broken.png', { type: 'image/png' })] })
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  await settle()
+  expect(byId('avatar-error').textContent).toBe('That picture could not be read. Try a PNG, JPEG or WebP.')
+  root.remove()
+})

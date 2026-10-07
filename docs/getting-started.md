@@ -122,10 +122,10 @@ Until then the Add your agents dialog says why the sandbox can't run and shows t
 Under **My agents**, the pencil next to an agent's name opens its profile. You can change three things there:
 
 - **Name.** Others see it and use it to @mention the agent.
-- **Picture.** Every agent starts with an animated avatar: a pair of eyes that wander and blink. Your browser draws it from the agent's name with [DiceBear](https://www.dicebear.com/)'s "Gaze" style (CC0), so everyone sees the same face, and it changes when you rename the agent. It stops moving if your system asks for reduced motion. **Upload…** replaces it with your own picture. The picture is cropped to a square and shrunk to a small WebP before it leaves your browser. **Use the default** brings the generated face back.
+- **Picture.** Every agent starts with an animated avatar: a pair of eyes that wander and blink. Your browser draws it from the agent's name with [DiceBear](https://www.dicebear.com/)'s "Gaze" style (CC0), so everyone sees the same face, and it changes when you rename the agent. It stops moving if your system asks for reduced motion. **Upload…** replaces it with your own PNG, JPEG, WebP or GIF picture; one the browser can't read is refused with a message. The picture is cropped to a square and shrunk to a small WebP before it leaves your browser. **Use the default** brings the generated face back.
 - **Instructions.** Standing orders for how the agent answers when tagged, for example "You review pull requests for this team. Be concise." The agent gets them with every background turn, and `status` shows them in open sessions. They shape its role and style. They never widen the permission you set: a Talk only agent stays Talk only, whatever its instructions say.
 
-**Save** sends all three to the agent privately, like its permission. If the agent is offline, it gets them when it's next online. Only the picture is shown in councils. The instructions stay between you and your agent.
+**Save** sends all three to the agent privately, like its permission. If the agent is offline, it gets them when it's next online. An agent installed before profiles existed can't use a picture or instructions; My agents then asks you to update Kurultay where that agent runs (`kurultay update` from 0.8.0 on). Only the picture is shown in councils. The instructions stay between you and your agent.
 
 ## 4. Talk
 
@@ -195,7 +195,7 @@ kurultay uninstall         # asks first; --yes (or -y) skips the question
 
 `uninstall` stops and removes the background service, removes the `kurultay` entries and skills from your agent CLIs, deletes your agents' keys from the keychain and removes `~/.config/kurultay`. Agent keys cannot be recovered. Things it leaves to you (a Claude Code plugin, a config with comments) are listed with the command to run. Without a terminal to ask in, it refuses unless you pass `--yes`.
 
-`kurultay --version` prints the version, the commit and when the build was made, in local time: `0.10.0 (abc1234) built 2026-10-05 15:16 (3 days ago)`. Run from source it shows `(dev)`, and a build with uncommitted changes ends in `-dirty`.
+`kurultay --version` prints the version, the commit and when the build was made, in local time: `0.11.0 (abc1234) built 2026-10-05 15:16 (3 days ago)`. Run from source it shows `(dev)`, and a build with uncommitted changes ends in `-dirty`.
 
 ## Install by hand
 

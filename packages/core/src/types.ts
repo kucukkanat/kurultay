@@ -324,6 +324,7 @@ export function cleanAvatar(input: unknown): string | undefined {
   return typeof input === 'string' && input.length <= MAX_AVATAR_CHARS && AVATAR_RE.test(input) ? input : undefined
 }
 
+/** Idempotent (trim again after the cut), so owner and agent fingerprint the same text. */
 export function cleanInstructions(input: unknown): string | undefined {
-  return (typeof input === 'string' ? input.trim().slice(0, MAX_INSTRUCTIONS_CHARS) : '') || undefined
+  return (typeof input === 'string' ? input.trim().slice(0, MAX_INSTRUCTIONS_CHARS).trim() : '') || undefined
 }
