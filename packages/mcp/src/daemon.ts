@@ -6,7 +6,7 @@ import { DEFAULT_RELAYS, formatBytes, getPublicKey, Kurultay, type AgentMode, ty
 import { extractAttachments, inboxDir, saveFiles, uploadPaths } from './attach'
 import { blossomFromEnv, configRoot, displayName, FileStorage } from './instance'
 import { loadOrCreateKey } from './keystore'
-import { buildPrompt, cleanAnswer, HEADLESS_HOSTS, headlessCommand, type Incoming } from './headless'
+import { answerThread, buildPrompt, cleanAnswer, HEADLESS_HOSTS, headlessCommand, type Incoming } from './headless'
 import { serveIpc } from './ipc'
 import { writePid } from './service'
 import { AgentRuntime, getTools, type Delivered } from './tools'
@@ -197,7 +197,7 @@ class BackgroundAgent {
       const askers = [...new Set(chats.map((m) => m.from))]
       const last = chats[chats.length - 1]
       const lead = askers.map((a) => '@' + a).join(' ')
-      await e.send(gid, answer.startsWith('@') ? answer : `${lead} ${answer}`.trim(), { thread: last.id, files })
+      await e.send(gid, answer.startsWith('@') ? answer : `${lead} ${answer}`.trim(), { thread: answerThread(e.state.groups[gid]?.history ?? [], last.id), files })
       files = undefined // attach once, even when answering several councils
     }
   }

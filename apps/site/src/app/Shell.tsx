@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { decodeLink, shortKey, type GroupState, type Kurultay, type Message, type Task } from '@kurultay/core'
-import { appUrl, devMode, getBlossom, getRelays, markRead, setBlossomPref, setDevMode, setRelaysPref, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
+import { appUrl, devMode, getBlossom, getRelays, markRead, markThreadSeen, setBlossomPref, setDevMode, setRelaysPref, threadSeen, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
 import { watchWord } from './devmode'
+import { replyTarget, splitThreads } from './threads'
 import { Avatar, CopyField, Icon, Modal, RelayHealthBadge, timeOf } from './ui'
 import { Markdown } from './markdown'
 import { richBlocks } from './richblocks'
@@ -190,6 +191,10 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
   const dmPeer = g.roster.dm ? members.find((m) => !m.isMe) : undefined
   const pending = usePendingFiles(e)
   const [dragging, setDragging] = useState(false)
+  // the thread open in the side panel, by the id of the message it hangs from
+  const [threadId, setThreadId] = useState<string | null>(null)
+  const { feed: visible, replies } = splitThreads(g.history)
+  const root = threadId ? visible.find((m) => m.id === threadId) : undefined
   // attachments belong to the council they were added in
   useEffect(() => () => pending.items.forEach((p) => pending.remove(p.id)), [g.id])
 
@@ -203,7 +208,7 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
   const sub = dmPeer ? (dmPeer.kind === 'agent' ? 'agent' : 'direct message') : `${members.length} members · ${online} online`
 
   return (
-    <div class={`group-view ${membersOpen ? 'members-open' : ''}`}>
+    <div class={`group-view ${root ? 'thread-open' : membersOpen ? 'members-open' : ''}`}>
       <div
         class={`conversation ${dragging ? 'dragging' : ''}`}
         onDragOver={(ev) => {
@@ -238,7 +243,7 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
               <Icon name="link" size={16} /> Invite
             </button>
           )}
-          <button class={`icon-btn ${membersOpen ? 'on' : ''}`} onClick={toggleMembers} aria-label="Members and tasks" aria-pressed={membersOpen}>
+          <button class={`icon-btn ${membersOpen && !root ? 'on' : ''}`} onClick={() => (root ? setThreadId(null) : toggleMembers())} aria-label="Members and tasks" aria-pressed={membersOpen && !root}>
             <Icon name="users" />
           </button>
         </TopBar>
@@ -252,29 +257,43 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
           }}
         >
           <div class="feed-inner">
-            {g.history.length === 0 && <p class="empty">Nothing said yet. Messages from before you joined don't exist anywhere: relays keep nothing.</p>}
-            {g.history.map((m, i) => (
-              <MessageRow key={m.id} e={e} g={g} m={m} prev={g.history[i - 1]} names={names} />
+            {visible.length === 0 && <p class="empty">Nothing said yet. Messages from before you joined don't exist anywhere: relays keep nothing.</p>}
+            {visible.map((m, i) => (
+              <MessageRow key={m.id} e={e} g={g} m={m} prev={visible[i - 1]} names={names} replies={replies.get(m.id)} onThread={setThreadId} />
             ))}
           </div>
         </div>
         <div class="typing-line">{typers.length ? `${typers.join(', ')} ${typers.length > 1 ? 'are' : 'is'} thinking…` : ''}</div>
         <Composer e={e} g={g} pending={pending} />
       </div>
-      {membersOpen && <MembersPanel e={e} g={g} close={toggleMembers} go={go} />}
+      {root ? <ThreadPanel e={e} g={g} root={root} replies={replies.get(root.id) ?? []} names={names} close={() => setThreadId(null)} /> : membersOpen && <MembersPanel e={e} g={g} close={toggleMembers} go={go} />}
     </div>
   )
 }
 
-function MessageRow({ e, g, m, prev, names }: { e: Kurultay; g: GroupState; m: Message; prev?: Message; names: Set<string> }) {
+interface RowProps {
+  e: Kurultay
+  g: GroupState
+  m: Message
+  prev?: Message
+  names: Set<string>
+  /** replies hanging from this message, shown as a link that opens the thread */
+  replies?: readonly Message[]
+  onThread: (id: string) => void
+  /** shown inside the thread panel: no thread link, no reply button */
+  inThread?: boolean
+}
+
+export function MessageRow({ e, g, m, prev, names, replies, onThread, inThread }: RowProps) {
   if (m.type === 'system') return <div class="msg-system">{m.text}</div>
   const who = e.member(g.id, m.from)
   const name = who?.name ?? m.from.slice(0, 8)
   const kind = who?.kind ?? (g.roster.members[m.from]?.kind || 'agent')
-  const grouped = prev && prev.from === m.from && prev.type !== 'system' && m.ts - prev.ts < 240 && m.type === 'chat' && prev.type === 'chat'
+  // an orphan reply in the main chat keeps its header: it is not a continuation of the message above
+  const orphan = !!m.thread && !inThread
+  const grouped = prev && prev.from === m.from && prev.type !== 'system' && m.ts - prev.ts < 240 && m.type === 'chat' && prev.type === 'chat' && !orphan
   const mine = m.from === e.pubkey
   const forMe = (m.mentions ?? []).includes(e.pubkey)
-  const parent = m.thread ? g.history.find((x) => x.id === m.thread) : undefined
 
   if (m.type === 'task_update') {
     const t = m.taskId ? g.tasks[m.taskId] : undefined
@@ -298,11 +317,7 @@ function MessageRow({ e, g, m, prev, names }: { e: Kurultay; g: GroupState; m: M
             <time>{timeOf(m.ts)}</time>
           </div>
         )}
-        {parent && (
-          <div class="reply-to">
-            ↳ {e.displayName(g.id, parent.from)}: {parent.text.slice(0, 80) || (parent.files ?? []).map((f) => f.name).join(", ")}
-          </div>
-        )}
+        {orphan && <div class="reply-to">↳ reply to an earlier message</div>}
         {m.type === 'task' && m.taskId && g.tasks[m.taskId] ? (
           <TaskCard e={e} g={g} t={g.tasks[m.taskId]} />
         ) : (
@@ -313,8 +328,64 @@ function MessageRow({ e, g, m, prev, names }: { e: Kurultay; g: GroupState; m: M
           )
         )}
         {m.files && <Attachments e={e} files={m.files} />}
+        {!inThread && replies?.length ? <ThreadLink root={m} replies={replies} open={() => onThread(m.id)} /> : null}
       </div>
+      {m.type === 'chat' && !inThread && (
+        <div class="msg-actions">
+          <button class="icon-btn" data-testid="reply-button" aria-label={`Reply to ${name}`} title="Reply in thread" onClick={() => onThread(m.id)}>
+            <Icon name="reply" size={16} />
+          </button>
+        </div>
+      )}
     </div>
+  )
+}
+
+export function ThreadLink({ root, replies, open }: { root: Message; replies: readonly Message[]; open: () => void }) {
+  const fresh = replies.length - threadSeen(root.id)
+  const last = replies[replies.length - 1]
+  return (
+    <button class={`thread-link ${fresh > 0 ? 'new' : ''}`} data-testid="thread-link" onClick={open}>
+      <strong>
+        {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
+      </strong>
+      {fresh > 0 && (
+        <span class="thread-new" data-testid="thread-new">
+          {fresh} new
+        </span>
+      )}
+      {last && <time>last reply {timeOf(last.ts)}</time>}
+    </button>
+  )
+}
+
+/** A message and its replies in the side panel, with a box that replies in the thread instead of the main chat. */
+export function ThreadPanel({ e, g, root, replies, names, close }: { e: Kurultay; g: GroupState; root: Message; replies: readonly Message[]; names: Set<string>; close: () => void }) {
+  const pending = usePendingFiles(e)
+  const list = useRef<HTMLDivElement>(null)
+  useEffect(() => () => pending.items.forEach((p) => pending.remove(p.id)), [root.id])
+  useEffect(() => markThreadSeen(root.id, replies.length))
+  // opening the thread, or a new reply, brings the end into view
+  useEffect(() => {
+    const el = list.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [root.id, replies.length])
+  const row = (m: Message, prev?: Message) => <MessageRow key={m.id} e={e} g={g} m={m} prev={prev} names={names} onThread={close} inThread />
+  return (
+    <aside class="members thread-panel" aria-label="Thread" data-testid="thread-panel">
+      <header class="panel-head">
+        <h2>Thread</h2>
+        <button class="icon-btn" onClick={close} aria-label="Close thread" data-testid="thread-close">
+          <Icon name="x" />
+        </button>
+      </header>
+      <div class="thread-body" ref={list}>
+        {row(root)}
+        <div class="thread-divider">{replies.length ? `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}` : 'No replies yet'}</div>
+        {replies.map((m, i) => row(m, replies[i - 1]))}
+      </div>
+      <Composer e={e} g={g} pending={pending} thread={{ root, replies }} />
+    </aside>
   )
 }
 
@@ -386,7 +457,7 @@ function TaskCard({ e, g, t }: { e: Kurultay; g: GroupState; t: Task }) {
   )
 }
 
-function Composer({ e, g, pending }: { e: Kurultay; g: GroupState; pending: PendingFiles }) {
+function Composer({ e, g, pending, thread }: { e: Kurultay; g: GroupState; pending: PendingFiles; thread?: { root: Message; replies: readonly Message[] } }) {
   const picker = useRef<HTMLInputElement>(null)
   const [text, setText] = useState('')
   const [mode, setMode] = useState<'chat' | 'task'>('chat')
@@ -434,7 +505,7 @@ function Composer({ e, g, pending }: { e: Kurultay; g: GroupState; pending: Pend
         await e.sendTask(g.id, assignee, title.trim(), rest.join('\n').trim() || undefined)
         setMode('chat')
       } else {
-        await e.send(g.id, body, { files })
+        await e.send(g.id, body, { files, thread: thread && replyTarget(thread.root, thread.replies, e.pubkey).id })
         pending.clear()
       }
       setText('')
@@ -476,10 +547,15 @@ function Composer({ e, g, pending }: { e: Kurultay; g: GroupState; pending: Pend
     }, 4000)
   }, [text])
 
+  // opening a thread puts the cursor in its box
+  useEffect(() => {
+    if (thread) ta.current?.focus()
+  }, [thread?.root.id])
+
   if (muted) return <div class="composer muted-note">A moderator muted you in this council.</div>
 
   return (
-    <div class="composer">
+    <div class={`composer ${thread ? 'in-thread' : ''}`} data-testid={thread ? 'thread-composer' : undefined}>
       {mode === 'chat' && <PendingChips pending={pending} />}
       {suggest && matches.length > 0 && (
         <ul class="suggest" role="listbox">
@@ -506,9 +582,11 @@ function Composer({ e, g, pending }: { e: Kurultay; g: GroupState; pending: Pend
         </div>
       )}
       <div class="composer-row">
-        <button class={`icon-btn ${mode === 'task' ? 'on' : ''}`} onClick={() => setMode(mode === 'task' ? 'chat' : 'task')} aria-pressed={mode === 'task'} title="Assign a task">
-          <Icon name="task" />
-        </button>
+        {!thread && (
+          <button class={`icon-btn ${mode === 'task' ? 'on' : ''}`} onClick={() => setMode(mode === 'task' ? 'chat' : 'task')} aria-pressed={mode === 'task'} title="Assign a task">
+            <Icon name="task" />
+          </button>
+        )}
         {mode === 'chat' && (
           <>
             <button class="icon-btn" onClick={() => picker.current?.click()} title="Attach files (encrypted for this council)" aria-label="Attach files">
@@ -539,7 +617,7 @@ function Composer({ e, g, pending }: { e: Kurultay; g: GroupState; pending: Pend
           }}
           onInput={(ev) => onInput((ev.target as HTMLTextAreaElement).value)}
           onKeyDown={onKey}
-          placeholder={mode === 'task' ? 'Describe the task' : g.roster.dm ? 'Message' : 'Message, or @mention an agent'} aria-label="Message" />
+          placeholder={thread ? 'Reply in thread' : mode === 'task' ? 'Describe the task' : g.roster.dm ? 'Message' : 'Message, or @mention an agent'} aria-label="Message" />
         <button class="btn primary send" onClick={submit} disabled={(!text.trim() && !pending.refs.length) || pending.busy} aria-label="Send" title={pending.busy ? 'Uploading…' : 'Send'}>
           <Icon name="send" />
         </button>

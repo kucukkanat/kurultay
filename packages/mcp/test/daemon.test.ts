@@ -92,6 +92,12 @@ test('background agent answers when tagged, with council context, inside the own
   expect(reply.text).toContain(`cwd=${work}`)
   // the owner's app sees the turn finish
   await until(() => owner.state.agentStatus?.[agentPk]?.running === false && owner.state.agentStatus?.[agentPk]?.lastRun, 5000)
+  // a question in the channel is answered in the channel, not hidden in a thread
+  expect(reply.thread).toBeUndefined()
+  // a reply to the agent's answer, with no @mention, still reaches it, and it answers inside that thread
+  const followUp = await owner.send(g.id, 'and who maintains it?', { thread: reply.id })
+  await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.thread === followUp), 15000)
+  await until(() => owner.state.agentStatus?.[agentPk]?.running === false, 5000)
 
   // owner raises the permission in the app → next turn runs with a writable sandbox
   await owner.setAgentMode(agentPk, 'edit')

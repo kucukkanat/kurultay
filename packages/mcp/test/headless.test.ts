@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { Kurultay, MemoryStorage, newSecretKey } from '@kurultay/core'
-import { buildPrompt, cleanAnswer, RICH_FORMATS } from '../src/headless'
+import { answerThread, buildPrompt, cleanAnswer, RICH_FORMATS } from '../src/headless'
 
 const agent = () => new Kurultay({ sk: newSecretKey(), name: 'reviewer', kind: 'agent', relays: [], storage: new MemoryStorage() })
 
@@ -26,4 +26,21 @@ test('answers are capped in bytes so a long chart still fits one message', () =>
   const long = cleanAnswer('é'.repeat(40_000))
   expect(new TextEncoder().encode(long).length).toBeLessThanOrEqual(30 * 1024 + 3)
   expect(long.length).toBeGreaterThan(8000)
+})
+
+test('an answer goes into a thread only when the question was asked in one', () => {
+  const history = [{ id: 'q' }, { id: 'r', thread: 'q' }]
+  expect(answerThread(history, 'q')).toBeUndefined()
+  expect(answerThread(history, 'r')).toBe('r')
+  expect(answerThread(history, 'unknown')).toBeUndefined()
+})
+
+test('a reply in the prompt shows what it replies to, even when that is outside the context window', () => {
+  const e = agent()
+  const g = e.createGroup('ops')
+  const chat = (id: string, from: string, text: string, thread?: string) => ({ id, groupId: g.id, from, ts: 1, type: 'chat' as const, text, thread })
+  g.history.push(chat('a', e.pubkey, 'the cache\nis stale'), chat('b', e.pubkey, 'filler'), chat('c', 'f'.repeat(64), 'why?', 'a'))
+  const prompt = buildPrompt(e, [{ groupId: g.id, id: 'c', from: 'f'.repeat(64), type: 'chat', text: 'why?' }], 'talk', '/tmp/w', 2)
+  expect(prompt).toContain('(replying to you: “the cache is stale”): why?')
+  expect(prompt).toContain('or are in the thread')
 })

@@ -32,6 +32,10 @@
   --s-1: 4px;
   --s-2: 8px;
   --s-3: 12px;
+  --border-w: 1px;
+  /* the thread side panel, and the layer it takes as a drawer on narrow screens */
+  --thread-w: 380px;
+  --z-drawer: 30;
   --avatar-picker-gap: 14px;
   color-scheme: light;
 }

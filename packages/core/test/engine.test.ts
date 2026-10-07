@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { Kurultay, MemoryStorage, newSecretKey, routeTag, routeWindow, signInner, unwrapGroup, wrapGroup, getPublicKey, randomHex } from '../src'
+import { Kurultay, MemoryStorage, newSecretKey, routeTag, routeWindow, signInner, unwrapGroup, wrapGroup, getPublicKey, randomHex, inMyThread, rootOf, type Message, type Member, type Roster } from '../src'
 import { startTestRelay, type TestRelay } from '../src/testing/relay'
 
 let relay: TestRelay
@@ -174,6 +174,64 @@ describe('engine', () => {
     await admin.send(dm, "no mention needed in a DM")
     await until(() => got.length === 1)
     expect(got[0]).toBe(true)
+  })
+})
+
+describe('threads', () => {
+  const chat = (id: string, from: string, thread?: string): Message => ({ id, groupId: 'g', from, ts: 1, type: 'chat', text: id, thread })
+  const member = (pubkey: string, kind: Member['kind']): Member => ({ pubkey, name: pubkey, kind, inbox: '', role: 'member', joinedAt: 0 })
+  const roster: Roster = { version: 1, name: 'g', dm: false, admins: [], members: { amy: member('amy', 'human'), me: member('me', 'agent'), bot: member('bot', 'agent') }, paused: false, muted: [] }
+  // amy asks (q), I answer in the thread (a1), bob's agent chimes in under my answer (b1); x and y point at each other
+  const history = [chat('q', 'amy'), chat('a1', 'me', 'q'), chat('b1', 'bot', 'a1'), chat('other', 'amy'), chat('x', 'amy', 'y'), chat('y', 'amy', 'x')]
+  const g = { history, roster }
+
+  test.each([
+    ['a person replying to the root of a thread I spoke in', 'amy', 'q', true],
+    ['a person replying to a reply in that thread', 'amy', 'b1', true],
+    ['a direct reply to my message', 'amy', 'a1', true],
+    ['another agent sharing the thread', 'bot', 'q', false],
+    ['another agent answering me directly', 'bot', 'a1', true],
+    ['a thread I never joined', 'amy', 'other', false],
+    ['a parent older than the history', 'amy', 'gone', false],
+    ['a cycle of ids', 'amy', 'x', false],
+  ] as const)('%s → %p', (_label, from, thread, expected) => {
+    expect(inMyThread(g, { from, thread }, 'me')).toBe(expected)
+  })
+
+  test('a message without a thread is never a thread reply', () => expect(inMyThread(g, { from: 'amy' }, 'me')).toBe(false))
+
+  test('rootOf walks to the top of the chain and stops on a cycle', () => {
+    const byId = new Map(history.map((m) => [m.id, m]))
+    expect(rootOf(byId, chat('r', 'amy', 'b1')).id).toBe('q')
+    expect(['x', 'y']).toContain(rootOf(byId, chat('r', 'amy', 'x')).id)
+  })
+
+  test('a person keeps talking to an agent in its thread without @mentions; other agents do not wake it', async () => {
+    const amy = await peer('amy', 'human')
+    const bot = await peer('scout', 'agent')
+    const other = await peer('critic', 'agent')
+    const g = amy.createGroup('threads')
+    for (const p of [bot, other]) {
+      await p.redeem(amy.createInvite(g.id))
+      await until(() => p.state.groups[g.id] && Object.keys(p.state.groups[g.id].roster.members).length >= 2)
+    }
+    await until(() => Object.keys(bot.state.groups[g.id].roster.members).length === 3 && Object.keys(other.state.groups[g.id].roster.members).length === 3)
+    const got: string[] = []
+    bot.on('message', (m) => m.forMe && got.push(m.message.text))
+    const seen = (p: Kurultay, id: string) => until(() => p.state.groups[g.id].history.some((m) => m.id === id))
+
+    const q = await amy.send(g.id, '@scout what broke?')
+    await until(() => got.length === 1)
+    const answer = await bot.send(g.id, 'the cache', { thread: q })
+    await Promise.all([seen(amy, answer), seen(other, answer)])
+
+    // another agent under the same root is not for me: no ping-pong between agents sharing a thread
+    const chime = await other.send(g.id, 'agreed', { thread: q })
+    await seen(bot, chime)
+    // the person replies to the root, no mention: it is for me
+    await amy.send(g.id, 'why the cache?', { thread: q })
+    await until(() => got.length === 2)
+    expect(got).toEqual(['@scout what broke?', 'why the cache?'])
   })
 })
 

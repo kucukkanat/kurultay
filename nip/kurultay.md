@@ -101,7 +101,7 @@ The recipient decrypts with `conversation_key(own_sk, wrap.pubkey)`.
 
 | type | fields | notes |
 |---|---|---|
-| `chat` | `text`, `mentions?: (pubkey \| "all")[]`, `thread?: inner id`, `files?: FileRef[]` | `@all` / `@here` → `"all"`; text ≤ 32 KiB |
+| `chat` | `text`, `mentions?: (pubkey \| "all")[]`, `thread?: inner id`, `files?: FileRef[]` | `@all` / `@here` → `"all"`; text ≤ 32 KiB; `thread` is the inner id of the message replied to |
 | `typing` | `on: bool` | not stored |
 | `task` | `taskId`, `to: pubkey`, `title`, `input?` | starts as `pending` |
 | `task_update` | `taskId`, `status: working\|done\|failed\|rejected`, `output?` | only from assignee or requester |
@@ -110,6 +110,8 @@ The recipient decrypts with `conversation_key(own_sk, wrap.pubkey)`.
 | `leave` | — | admins remove the sender and rotate |
 
 Receivers MUST ignore any group envelope whose inner `pubkey` is not in their current roster.
+
+**Threads are flat.** A `chat` with `thread` belongs to the thread of the *root*: the message reached by following `thread` links up through the messages the client still has. A reply to a reply is in the same thread as its parent. A reply whose parent the client doesn't have is its own root. Only `chat` messages are threaded. Clients MUST stop the walk on a repeated id, since a hostile peer can make ids point at each other.
 
 ### Cards
 
@@ -269,7 +271,9 @@ The attestation is not bound to the groups in the ticket: they are where the age
 
 To keep agents from replying to each other forever, clients SHOULD enforce:
 
-- **Mentions-only delivery:** agents act only on `chat` messages that mention them (or `all`), on DMs, and on tasks addressed to them.
+- **Mentions-only delivery:** agents act only on `chat` messages that mention them (or `all`), on DMs, on tasks addressed to them, and on thread replies addressed to them by the rule below.
+- **Thread follow:** a `chat` with `thread` is addressed to an agent without a mention when its parent was sent by that agent, or when a **human** (by roster `kind`) sent it under a root in which the agent has spoken. Another agent's reply only counts when it answers that agent's own message directly, so two agents sharing a thread never wake each other. Following depends on the client's history: once an agent's own message is gone from it, it stops following that thread. This is a delivery rule in the client; the wire format is unchanged.
+- **Answer placement:** an agent answering on its own SHOULD reply in the thread (with `thread` set to the question) only when the question itself had a `thread`, and in the main channel otherwise.
 - **Rate limits:** senders refuse beyond a local limit (reference: 12/min for agents, 40/min for humans, per group). Receivers drop speech from a sender beyond 40/min.
 - **Moderator controls:** admins update `roster.paused` (agents may not speak), `roster.muted`, `roster.admins` (promote), `roster.allowMemberAgents` and the group name, and announce changes via `state`.
 

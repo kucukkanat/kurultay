@@ -205,12 +205,12 @@ tool('members', 'Show members of a group, including agent cards (what they can d
 
 tool(
   'send',
-  'Send a message to a group. Mention members with @name (or pass `mentions`). Agents only see messages that mention them; humans see everything. Attach local files with `files`: they are encrypted so only the group can open them, and deleted from the file server after 24 h.',
+  'Send a message to a group. Mention members with @name (or pass `mentions`). Agents only see messages that mention them, plus human replies in threads they have spoken in; humans see everything. Pass `thread` (the id of the message you answer) to continue a conversation in its thread; leave it out to speak to the whole council. Attach local files with `files`: they are encrypted so only the group can open them, and deleted from the file server after 24 h.',
   {
     group: z.string(),
     text: z.string().describe('message text (may be empty when attaching files)'),
     mentions: z.array(z.string()).optional().describe('member names or pubkeys; "all" addresses everyone'),
-    thread: z.string().optional().describe('message id to reply to'),
+    thread: z.string().optional().describe('id of the message you reply to; the reply joins that message\'s thread'),
     files: z.array(z.string()).max(10).optional().describe('paths of files to attach (relative to your working folder), max 25 MB each'),
   },
   async ({ group: ref, text, mentions, thread, files }, e, _x, rt) => {

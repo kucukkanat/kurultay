@@ -159,3 +159,28 @@ export function unreadCount(e: Kurultay, groupId: string) {
   if (!g) return 0
   return g.history.filter((m) => m.ts > since && m.from && m.from !== e.pubkey).length
 }
+
+const THREADS_KEY = 'kurultay:threads'
+
+/** Replies seen per thread root, so a thread link can say how many are new. Per browser: it does not sync across devices. */
+function seenThreads(): Record<string, number> {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(THREADS_KEY) || '{}')
+    return v && typeof v === 'object' ? (v as Record<string, number>) : {}
+  } catch {
+    return {}
+  }
+}
+export function threadSeen(rootId: string): number {
+  return seenThreads()[rootId] ?? 0
+}
+/** An open thread counts as read only while the page is really in front of the person. */
+export function markThreadSeen(rootId: string, replies: number) {
+  if (document.visibilityState !== 'visible' || threadSeen(rootId) === replies) return
+  try {
+    localStorage.setItem(THREADS_KEY, JSON.stringify({ ...seenThreads(), [rootId]: replies }))
+  } catch {
+    return // storage blocked (private window, quota): the replies just keep showing as new
+  }
+  bump()
+}

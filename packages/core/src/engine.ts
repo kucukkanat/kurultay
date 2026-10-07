@@ -89,10 +89,40 @@ export interface RawRecord {
   relay?: string
 }
 
+/**
+ * The top of a reply chain. Threads are flat, as in Slack: a reply to a reply belongs to the thread of the first message.
+ * The walk stops at the oldest message we still have, so a reply whose parent fell out of history is its own root.
+ * `seen` guards against a hostile cycle of ids: a peer controls `thread`, and a loop must never hang the app or the daemon.
+ */
+export function rootOf(byId: ReadonlyMap<string, Message>, m: Message): Message {
+  const seen = new Set<string>()
+  let cur = m
+  for (let up = cur.thread ? byId.get(cur.thread) : undefined; up && !seen.has(cur.id); up = cur.thread ? byId.get(cur.thread) : undefined) {
+    seen.add(cur.id)
+    cur = up
+  }
+  return cur
+}
+
+/**
+ * A reply in a thread I am part of is addressed to me without an @mention: that is how a person keeps talking to an agent.
+ * A direct reply to something I said always counts. Merely sharing a thread only counts when a human wrote the reply, so two
+ * agents in one thread never keep each other talking.
+ */
+export function inMyThread(g: Pick<GroupState, 'history' | 'roster'>, msg: Pick<Message, 'from' | 'thread'>, me: string): boolean {
+  if (!msg.thread) return false
+  const byId = new Map(g.history.map((m) => [m.id, m]))
+  const parent = byId.get(msg.thread)
+  if (parent?.from === me) return true
+  if (!parent || g.roster.members[msg.from]?.kind !== 'human') return false
+  const root = rootOf(byId, parent).id
+  return g.history.some((m) => m.from === me && rootOf(byId, m).id === root)
+}
+
 export interface MessageEvent {
   groupId: string
   message: Message
-  /** true when the message explicitly addresses me (mention, @all, task to me, DM) */
+  /** true when the message explicitly addresses me (mention, @all, task to me, DM, a reply in a thread I spoke in) */
   forMe: boolean
 }
 
@@ -425,7 +455,7 @@ export class Kurultay extends Emitter<EngineEvents> {
       case 'chat': {
         const mentions = (env.mentions ?? []).filter((m) => typeof m === 'string')
         const msg: Message = { id: inner.id, groupId, from, ts: inner.created_at, type: 'chat', text: String(env.text ?? '').slice(0, MAX_TEXT_BYTES), mentions, thread: env.thread, files: cleanFileRefs(env.files) }
-        this.record(g, msg, from !== this.pubkey && (g.roster.dm || mentions.includes(this.pubkey) || mentions.includes('all')))
+        this.record(g, msg, from !== this.pubkey && (g.roster.dm || mentions.includes(this.pubkey) || mentions.includes('all') || inMyThread(g, msg, this.pubkey)))
         break
       }
       case 'typing':
