@@ -1,8 +1,8 @@
 import { afterAll, expect, test } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Kurultay, MemoryStorage, newSecretKey } from '@kurultay/core'
+import { Kurultay, MemoryStorage, newSecretKey, PLAYFUL_NAMES } from '@kurultay/core'
 import { startTestBlossom, startTestRelay } from '@kurultay/core/testing'
 
 const relay = startTestRelay(0)
@@ -64,12 +64,17 @@ test('background agent answers when tagged, with council context, inside the own
   await j.exited
   const out = await new Response(j.stdout).text()
   expect(out).toContain(`Working folder: ${work}`)
-  expect(out).toContain('codex@testbox joined #ops')
+  const handle = JSON.parse(readFileSync(join(home, '.config/kurultay/instances/codex#1/state.json'), 'utf8')).agentSettings.name
+  expect((PLAYFUL_NAMES as readonly string[]).includes(handle)).toBe(true)
+  expect(out).toContain(`${handle} joined #ops`)
   writeFileSync(join(home, '.config/kurultay/agents.json'), JSON.stringify({ 'codex#1': { host: 'codex', workdir: work, addedAt: Date.now() } }))
   daemon = Bun.spawn(['bun', join(import.meta.dir, '../src/cli.ts'), 'daemon'], { env, cwd: home, stdout: 'inherit', stderr: 'inherit' })
 
   // the owner's app learns where the agent works (privately, via its inbox)
-  const agentPk = owner.members(g.id).find((m) => m.kind === 'agent')!.pubkey
+  const agent = owner.members(g.id).find((m) => m.kind === 'agent')!
+  const agentPk = agent.pubkey
+  // the playful handle is what the council sees, and what @mentions route on below
+  expect(agent.name).toBe(handle)
   await until(() => owner.state.agentStatus?.[agentPk]?.background)
   expect(owner.state.agentStatus![agentPk].workdir).toBe(work)
   expect(owner.state.agentStatus![agentPk].mode).toBe('talk')
@@ -78,7 +83,7 @@ test('background agent answers when tagged, with council context, inside the own
   await owner.send(g.id, 'the deploy script lives in ops/deploy.sh')
   await Bun.sleep(500)
   // tagged → background turn → reply in the council, with context, read-only sandbox for "talk"
-  await owner.send(g.id, '@codex where is the deploy script?')
+  await owner.send(g.id, `@${handle} where is the deploy script?`)
   await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.text.includes('sandbox=')), 15000)
   let reply = owner.state.groups[g.id].history.findLast((m) => m.from === agentPk)!
   expect(reply.text).toContain('@tolga')
@@ -91,15 +96,15 @@ test('background agent answers when tagged, with council context, inside the own
   // owner raises the permission in the app → next turn runs with a writable sandbox
   await owner.setAgentMode(agentPk, 'edit')
   await until(() => owner.state.agentStatus?.[agentPk]?.mode === 'edit')
-  await owner.send(g.id, '@codex fix it please')
+  await owner.send(g.id, `@${handle} fix it please`)
   await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.text.includes('workspace-write')), 15000)
 
   // files in: saved into the folder for the CLI to read
   const ref = await owner.uploadFile(new TextEncoder().encode('budget is 42k'), 'budget.txt', 'text/plain')
-  await owner.send(g.id, '@codex what does the attached say?', { files: [ref] })
+  await owner.send(g.id, `@${handle} what does the attached say?`, { files: [ref] })
   await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.text.includes('file=budget is 42k')), 15000)
   // files out: [[attach: …]] inside the folder is shared, anything outside is refused
-  await owner.send(g.id, '@codex please attach the report')
+  await owner.send(g.id, `@${handle} please attach the report`)
   await until(() => owner.state.groups[g.id].history.some((m) => m.from === agentPk && m.files?.length), 15000)
   const withFile = owner.state.groups[g.id].history.findLast((m) => m.from === agentPk && m.files?.length)!
   expect(withFile.files!.map((f) => f.name)).toEqual(['report.txt'])
@@ -127,7 +132,7 @@ test('background agent answers when tagged, with council context, inside the own
   await owner.setAgentMode(agentPk, 'off')
   await until(() => owner.state.agentStatus?.[agentPk]?.mode === 'off')
   const before = owner.state.groups[g.id].history.length
-  await owner.send(g.id, '@codex are you there?')
+  await owner.send(g.id, `@${handle} are you there?`)
   await Bun.sleep(4000)
   reply = owner.state.groups[g.id].history.findLast((m) => m.from === agentPk)!
   expect(owner.state.groups[g.id].history.length).toBe(before + 1)

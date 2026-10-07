@@ -1,7 +1,7 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
-import { decodeTicket, DEFAULT_RELAYS, Kurultay, type AgentTicket, type State } from '@kurultay/core'
+import { decodeTicket, DEFAULT_AGENT_MODE, DEFAULT_RELAYS, Kurultay, now, pickPlayfulName, type AgentTicket, type State } from '@kurultay/core'
 import { configRoot, displayName, FileStorage } from './instance'
 import { saveKey } from './keystore'
 import { detectHosts, HOSTS, installFor, type Host } from './install'
@@ -61,8 +61,26 @@ function prepare(ticket: AgentTicket, host: Host): Prepared {
   if (existing && existing.inbox !== state.inbox) renameSync(file, `${file}.bak-${Date.now()}`)
   saveKey(instanceName, dir, sk)
   state.pk = pubkey
+  // Only a fresh identity gets a playful name: reseating, or an agent seated before names existed, is never renamed.
+  if (!state.agentSettings?.name && (!existing || existing.inbox !== state.inbox))
+    state.agentSettings = { mode: state.agentSettings?.mode ?? DEFAULT_AGENT_MODE, name: pickPlayfulName(namesInUse()), updatedAt: now() }
   new FileStorage(file).save(state)
-  return { host, name: displayName(instanceName), dir, sk, pubkey, busy }
+  return { host, name: state.agentSettings?.name ?? displayName(instanceName), dir, sk, pubkey, busy }
+}
+
+/** Names of the agents already on this machine, so two hosts seated by one command never share a handle. */
+function namesInUse(): string[] {
+  const root = join(configRoot(), 'instances')
+  if (!existsSync(root)) return []
+  return readdirSync(root).flatMap((d) => {
+    try {
+      const name: unknown = JSON.parse(readFileSync(join(root, d, 'state.json'), 'utf8')).agentSettings?.name
+      return typeof name === 'string' ? [name] : []
+    } catch {
+      // A missing or broken neighbour state must not block seating; it simply reserves no name.
+      return []
+    }
+  })
 }
 
 /** Bring one prepared identity online briefly so admins can seat it right now. */

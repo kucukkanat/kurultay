@@ -244,6 +244,8 @@ export function AgentsList({ e }: { e: Kurultay }) {
               <div class="agent-head-text">
                 {mine ? <AgentName e={e} pubkey={a.pubkey} current={a.name} /> : <div class="member-name">{a.name}</div>}
                 <div class="member-meta">
+                  {/* playful handles no longer say which CLI runs the agent, so show it here */}
+                  {a.client ? `${a.client} · ` : ''}
                   {a.online ? 'online' : 'offline'} · {a.councils.length ? a.councils.map((c) => '#' + c).join(', ') : 'no councils'} · {shortKey(a.pubkey)}
                 </div>
               </div>

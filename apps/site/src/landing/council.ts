@@ -4,10 +4,10 @@ const SEATS = [
   { label: 'tolga', kind: 'human' },
   { label: 'claude@mbp', kind: 'agent' },
   { label: 'copilot@mbp', kind: 'agent' },
-  { label: 'pi@studio', kind: 'agent' },
+  { label: 'tulpar', kind: 'agent' },
   { label: 'alice', kind: 'human' },
   { label: 'opencode@ci', kind: 'agent' },
-  { label: 'codex@mbp', kind: 'agent' },
+  { label: 'falcon', kind: 'agent' },
 ] as const
 
 const C = 220

@@ -1,13 +1,26 @@
 import { afterAll, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Kurultay, MemoryStorage, newSecretKey } from '@kurultay/core'
+import { decodeTicket, Kurultay, MemoryStorage, newSecretKey, PLAYFUL_NAMES } from '@kurultay/core'
 import { startTestRelay } from '@kurultay/core/testing'
 import { runJoin } from '../src/join'
 
 const relay = startTestRelay(0)
 let owner: Kurultay
+const isPlayful = (n: unknown) => (PLAYFUL_NAMES as readonly unknown[]).includes(n)
+const quiet = async (args: string[]) => {
+  const logs: string[] = []
+  const orig = console.log
+  console.log = (...a: unknown[]) => void logs.push(a.join(' '))
+  try {
+    return { code: await runJoin(args), out: logs.join('\n') }
+  } finally {
+    console.log = orig
+  }
+}
+const seatedName = (home: string, host: string): unknown =>
+  JSON.parse(readFileSync(join(home, `.config/kurultay/instances/${host}#1/state.json`), 'utf8')).agentSettings?.name
 afterAll(async () => {
   await owner?.stop()
   relay.stop()
@@ -26,16 +39,16 @@ test('kurultay join: one command configures hosts and seats the agents', async (
   const g = owner.createGroup('release-council')
   const ticket = owner.createTicket([g.id])
 
-  const logs: string[] = []
-  const orig = console.log
-  console.log = (...a: unknown[]) => void logs.push(a.join(' '))
-  const code = await runJoin([ticket, '--host', 'codex', '--host', 'opencode'])
-  console.log = orig
+  const { code, out } = await quiet([ticket, '--host', 'codex', '--host', 'opencode'])
 
   expect(code).toBe(0)
-  const out = logs.join('\n')
-  expect(out).toContain('codex@testbox joined #release-council')
-  expect(out).toContain('opencode@testbox joined #release-council')
+  // agents seated without a name get distinct playful handles from their first message
+  const [codexName, opencodeName] = [seatedName(home, 'codex'), seatedName(home, 'opencode')]
+  expect(isPlayful(codexName)).toBe(true)
+  expect(isPlayful(opencodeName)).toBe(true)
+  expect(codexName).not.toBe(opencodeName)
+  expect(out).toContain(`✓ ${codexName} joined #release-council`)
+  expect(out).toContain(`✓ ${opencodeName} joined #release-council`)
   const members = owner.members(g.id)
   expect(members.filter((m) => m.kind === 'agent' && m.verified?.owner === owner.pubkey)).toHaveLength(2)
   expect(Object.keys(owner.state.approvals)).toHaveLength(0)
@@ -45,6 +58,27 @@ test('kurultay join: one command configures hosts and seats the agents', async (
   const st = JSON.parse(readFileSync(join(home, '.config/kurultay/instances/codex#1/state.json'), 'utf8'))
   expect(st.groups[g.id]).toBeDefined()
   expect(st.owner.attestation).toBeDefined()
+
+  // reseating with the same ticket never renames
+  expect((await quiet([ticket, '--host', 'codex', '--host', 'opencode', '--no-background'])).code).toBe(0)
+  expect([seatedName(home, 'codex'), seatedName(home, 'opencode')]).toEqual([codexName, opencodeName])
+}, 40000)
+
+test('an agent seated before playful names keeps its host@machine name', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'kurultay-legacy-'))
+  process.env.HOME = home
+  process.env.KURULTAY_HOME = join(home, '.config/kurultay')
+  const g = owner.createGroup('legacy-council')
+  const ticket = owner.createTicket([g.id])
+  // same identity (inbox) as the ticket derives, but no agentSettings.name: what older versions wrote
+  const { state } = Kurultay.fromTicket(decodeTicket(ticket), 'codex', null)
+  const dir = join(home, '.config/kurultay/instances/codex#1')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({ ...state, groups: {}, pendingJoins: {} }))
+  const { code, out } = await quiet([ticket, '--host', 'codex', '--no-background'])
+  expect(code).toBe(0)
+  expect(seatedName(home, 'codex')).toBeUndefined()
+  expect(out).toContain('✓ codex@testbox joined #legacy-council')
 }, 40000)
 
 test('a running session switches to the ticket identity, and the ticket host choice is honoured', async () => {
@@ -65,13 +99,11 @@ test('a running session switches to the ticket identity, and the ticket host cho
 
   const g = owner.createGroup('live-council')
   const ticket = owner.createTicket([g.id], { hosts: ['pi'] })
-  const orig = console.log
-  const logs: string[] = []
-  console.log = (...x: unknown[]) => void logs.push(x.join(' '))
-  await runJoin([ticket])
-  console.log = orig
-  expect(logs.join('\n')).toContain('pi@testbox joined #live-council')
-  expect(logs.join('\n')).not.toContain('Codex')
+  const { out } = await quiet([ticket])
+  const piName = seatedName(home, 'pi')
+  expect(isPlayful(piName)).toBe(true)
+  expect(out).toContain(`✓ ${piName} joined #live-council`)
+  expect(out).not.toContain('Codex')
   await Bun.sleep(400) // let the old engine try to save and notice the new owner of the file
   const after = await status()
   expect(after.you.pubkey).not.toBe(before.you.pubkey)

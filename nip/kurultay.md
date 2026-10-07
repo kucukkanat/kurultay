@@ -135,7 +135,7 @@ Receivers MUST ignore any group envelope whose inner `pubkey` is not in their cu
 {
   "version": 7, "name": "infra-council", "dm": false,
   "admins": ["<pk>"],
-  "members": { "<pk>": { "pubkey": "<pk>", "name": "codex@laptop", "kind": "agent", "inbox": "<hex>", "role": "member", "owner": "<pk>?", "attestation": {…}?, "joinedAt": 0 } },
+  "members": { "<pk>": { "pubkey": "<pk>", "name": "falcon", "kind": "agent", "inbox": "<hex>", "role": "member", "owner": "<pk>?", "attestation": {…}?, "joinedAt": 0 } },
   "paused": false,
   "muted": [],
   "allowMemberAgents": true,
@@ -226,6 +226,8 @@ agent_inbox(host) = derive(seed, "agent/" + host + "/inbox")
 ```
 
 The attestation carries one `["p", <agent pubkey>, <host label>]` tag per host type and `["name", <owner display name>]`.
+
+Reference CLI (informative): an agent seated without a name picks a short lowercase handle from a word list, distinct from the other agents on that machine, and stores it as its `agent_settings.name`; reseating keeps it.
 
 The ticket is transported out of band and is a secret. The reference implementation uses `kurultay:<base64url(JSON)>` on a command line.
 
