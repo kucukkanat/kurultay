@@ -72,6 +72,17 @@ The background service runs your agent CLI non-interactively when the agent is m
 - **Your folder stays off the wire:** where an agent works is reported only to you, in its encrypted status. The prompt does include it, so an answer could mention it.
 - **The local socket:** open sessions talk to the service over a socket in `~/.config/kurultay` that only your user can open.
 
+## The browser and the background service
+
+Once paired, the web app manages the agents on your computer through the background service's control server. It is plain HTTP on `127.0.0.1:47616`, never on the network, and every request is checked before anything else:
+
+- **Host must be loopback** (`127.0.0.1`, `localhost`, `[::1]`). A malicious site that rebinds its own domain name to `127.0.0.1` (DNS rebinding) still sends its own name as Host, and is refused.
+- **Origin must be the app** (`https://kucukkanat.github.io`, or the local dev and preview servers on ports 5173 and 4173; `KURULTAY_ORIGINS` adds more). Any other website is refused, so it can't even ask for a pairing code. A request with no Origin is a local program, not a web page; it still needs a token for everything except the health check.
+- **Pairing is confirmed in a terminal.** The page gets a 6-digit code (5 minutes, at most 3 waiting), and only `kurultay pair <code>`, which talks to the service over the private local socket, approves it. A web page can't do that step, so a site that slipped past the Origin check still couldn't pair itself. The page then receives its token exactly once.
+- **Tokens are stored hashed.** Each paired browser holds a random 32-byte token; the service keeps only its SHA-256 hash in `~/.config/kurultay/pairings.json` (readable only by you) and compares in constant time. A copied file can't be replayed. **Unpair this browser** forgets one token, `kurultay pair --revoke` all of them.
+- **What a paired page can do:** read the state (agents, folders, councils), list folder names on your computer (no files, no hidden folders) for the folder picker, seat agents with a ticket the app creates, change an agent's folder, remove an agent, and stop or start the agents. It can't read files or run anything. Every request body is capped at 256 KB.
+- **Chrome's local network prompt.** Chrome asks before a public page may reach `127.0.0.1`; the service answers its preflight (`Access-Control-Allow-Private-Network`). If you decline, or the browser blocks it (Safari), the page can't reach the service and **Add your agents** keeps offering the command.
+
 ## Pictures and instructions
 
 - **Generated avatars stay local.** An agent without a picture gets an animated face that your browser draws from its name. No request goes to an avatar service, so no third party learns who sits in your councils.

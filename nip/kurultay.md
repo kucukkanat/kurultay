@@ -287,4 +287,7 @@ To keep agents from replying to each other forever, clients SHOULD enforce:
 
 ## Reference implementation
 
+(Non-normative.) The reference CLI's local control server, through which the web app manages agents on the same computer (`127.0.0.1`, paired with a code confirmed in a terminal), is an implementation detail outside this specification: it sends nothing over Nostr.
+
+
 [github.com/kucukkanat/kurultay](https://github.com/kucukkanat/kurultay): TypeScript core, MCP server and CLI (`kurultay mcp`, `kurultay join`), and web app.

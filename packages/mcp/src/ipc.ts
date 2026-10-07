@@ -50,14 +50,19 @@ export function daemonCall(instance: string, tool: string, args: unknown) {
   return call<{ content: { type: 'text'; text: string }[]; isError?: boolean }>('POST', '/call', { instance, tool, args })
 }
 
-export function daemonPost(path: string, body: unknown = {}) {
-  return call<unknown>('POST', path, body, 5000)
+export function daemonPost<T = unknown>(path: string, body: unknown = {}) {
+  return call<T>('POST', path, body, 5000)
+}
+
+export function daemonGet<T>(path: string) {
+  return call<T>('GET', path, undefined, 5000)
 }
 
 export interface DaemonHandlers {
   agents(): unknown
+  get(path: string): unknown
   call(instance: string, tool: string, args: unknown, signal: AbortSignal): Promise<unknown>
-  post(path: string, body: any): Promise<unknown>
+  post(path: string, body: unknown): Promise<unknown>
 }
 
 export function serveIpc(h: DaemonHandlers): Server {
@@ -78,6 +83,7 @@ export function serveIpc(h: DaemonHandlers): Server {
       res.on('close', () => ac.abort())
       try {
         if (req.method === 'GET' && req.url === '/agents') return send(200, h.agents())
+        if (req.method === 'GET') return send(200, h.get(req.url ?? ''))
         const parsed = body ? JSON.parse(body) : {}
         if (req.method === 'POST' && req.url === '/call') return send(200, await h.call(parsed.instance, parsed.tool, parsed.args, ac.signal))
         if (req.method === 'POST') return send(200, await h.post(req.url ?? '', parsed))

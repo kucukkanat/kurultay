@@ -35,7 +35,7 @@ fs.writeFileSync(out, 'sandbox=' + sandbox + ' context=' + sawContext + ' cwd=' 
 )
 chmodSync(join(bin, 'codex'), 0o755)
 
-const env = { ...process.env, HOME: home, KURULTAY_HOME: join(home, '.config/kurultay'), KURULTAY_NO_KEYCHAIN: '1', KURULTAY_RELAYS: relay.url, KURULTAY_BLOSSOM: blossom.url, KURULTAY_MACHINE: 'testbox', PATH: `${bin}:${process.env.PATH}` }
+const env = { ...process.env, HOME: home, KURULTAY_HOME: join(home, '.config/kurultay'), KURULTAY_NO_KEYCHAIN: '1', KURULTAY_RELAYS: relay.url, KURULTAY_BLOSSOM: blossom.url, KURULTAY_MACHINE: 'testbox', KURULTAY_PORT: '0', PATH: `${bin}:${process.env.PATH}` }
 let daemon: ReturnType<typeof Bun.spawn> | undefined
 let owner: Kurultay
 afterAll(async () => {

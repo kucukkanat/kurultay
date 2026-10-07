@@ -2,12 +2,16 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
-import { DEFAULT_RELAYS, formatBytes, getPublicKey, Kurultay, type AgentMode, type FileRef, type Message } from '@kurultay/core'
+import { DAEMON_PORT, decodeTicket, DEFAULT_RELAYS, formatBytes, getPublicKey, Kurultay, type AgentMode, type AgentTicket, type DaemonAgentInfo, type DaemonSeatRequest, type DaemonSeatResult, type DaemonSnapshot, type FileRef, type Message } from '@kurultay/core'
 import { extractAttachments, inboxDir, saveFiles, uploadPaths } from './attach'
+import { defaultOrigins, startControl, type Control, type ControlApi } from './control'
 import { blossomFromEnv, configRoot, displayName, FileStorage } from './instance'
-import { loadOrCreateKey } from './keystore'
+import { deleteKey, loadOrCreateKey } from './keystore'
 import { answerThread, buildPrompt, cleanAnswer, HEADLESS_HOSTS, headlessCommand, type Incoming } from './headless'
+import { detectHosts, HOSTS, type Host } from './install'
 import { serveIpc } from './ipc'
+import { createPairing } from './pairing'
+import { installedRuntime, LABEL, seatAgents, SeatError, workdirOf } from './seat'
 import { writePid } from './service'
 import { AgentRuntime, getTools, type Delivered } from './tools'
 import { VERSION } from './version'
@@ -234,12 +238,27 @@ function runCommand(cmd: string, args: string[], cwd: string, env: Record<string
   })
 }
 
+const portFile = () => join(configRoot(), 'daemon.port')
+const isHost = (h: string): h is Host => (HOSTS as readonly string[]).includes(h) && h !== 'vscode'
+
 export async function runDaemon() {
   writePid()
   const agents = new Map<string, BackgroundAgent>()
   const relaysEnv = process.env.KURULTAY_RELAYS?.split(',').map((s) => s.trim()).filter(Boolean)
+  const pairing = createPairing(join(configRoot(), 'pairings.json'))
+  // stopped from the app: engines are down but the control server stays up, so the app can start them again
+  let paused = false
+
+  async function stopAgent(instance: string, reason: string) {
+    const a = agents.get(instance)
+    if (!a) return
+    a.cancel(reason)
+    agents.delete(instance)
+    await a.engine.stop().catch(() => {})
+  }
 
   async function load() {
+    if (paused) return
     const reg = readRegistry()
     for (const [instance, entry] of Object.entries(reg)) {
       const dir = join(configRoot(), 'instances', instance)
@@ -262,36 +281,124 @@ export async function runDaemon() {
       log('online:', engine.name, 'folder', entry.workdir, 'permission', engine.agentMode)
       setTimeout(() => void agent.report(), 3000)
     }
-    for (const [instance, a] of agents) {
-      if (!reg[instance]) {
-        await a.engine.stop()
-        agents.delete(instance)
-      }
+    for (const instance of agents.keys()) if (!reg[instance]) await stopAgent(instance, 'removed')
+  }
+
+  const agentInfo = (): DaemonAgentInfo[] => {
+    // stopped: the engines are gone but the seats are still registered, so the app can list them
+    if (paused) return Object.entries(readRegistry()).map(([instance, e]) => ({ instance, pubkey: '', name: displayName(instance), host: e.host, workdir: e.workdir, mode: 'off', online: false, running: false, councils: [], groupIds: [] }))
+    return [...agents.values()].map((a) => ({
+      instance: a.instance,
+      pubkey: a.engine.pubkey,
+      name: a.engine.name,
+      host: a.entry.host,
+      workdir: a.entry.workdir,
+      mode: a.engine.agentMode,
+      online: a.engine.pool.relays.some((r) => r.status === 'open'),
+      running: a.running,
+      lastRun: a.lastRun ? new Date(a.lastRun * 1000).toISOString() : undefined,
+      lastError: a.lastError,
+      councils: a.engine.groups().map((g) => g.roster.name),
+      groupIds: a.engine.groups().map((g) => g.id),
+    }))
+  }
+
+  const snapshot = (): DaemonSnapshot => {
+    const reg = readRegistry()
+    const found = new Set<string>(detectHosts())
+    return {
+      version: VERSION,
+      pid: process.pid,
+      paused,
+      home: configRoot(),
+      agents: agentInfo(),
+      hosts: HOSTS.filter(isHost).map((id) => ({ id, label: LABEL[id], detected: found.has(id), seated: Object.values(reg).some((e) => e.host === id) })),
     }
+  }
+
+  const running = () => {
+    if (paused) throw new SeatError('paused', 'The agents are stopped. Start them first.')
+  }
+
+  async function seat(req: DaemonSeatRequest): Promise<DaemonSeatResult> {
+    running()
+    let ticket: AgentTicket
+    try {
+      ticket = decodeTicket(req.ticket)
+    } catch (err) {
+      throw new SeatError('bad-ticket', (err as Error).message)
+    }
+    const hosts = [...new Set(req.hosts)].filter(isHost)
+    if (!hosts.length) throw new SeatError('no-hosts', 'Pick at least one agent CLI')
+    const workdir = workdirOf(req.workdir)
+    // a running agent holds this identity's state: stop it before its state is rewritten, load() brings it back
+    for (const h of hosts) await stopAgent(`${h}#1`, 'seating again')
+    const seated = seatAgents(ticket, hosts, installedRuntime())
+    const reg = readRegistry()
+    writeRegistry({ ...reg, ...Object.fromEntries(seated.map(({ prepared: p }) => [p.instance, { host: p.host, workdir, addedAt: reg[p.instance]?.addedAt ?? Date.now() }])) })
+    await load()
+    log('seated from the app:', seated.map((s) => s.prepared.name).join(', '), 'in', workdir)
+    return { agents: seated.map(({ prepared: p }) => ({ instance: p.instance, name: p.name, host: p.host })) }
+  }
+
+  async function removeAgent(instance: string) {
+    // leaving is what takes the agent off the member lists; a stopped agent cannot say goodbye
+    running()
+    const { [instance]: entry, ...rest } = readRegistry()
+    if (!entry) throw new SeatError('unknown-agent', `No agent ${instance}`)
+    const a = agents.get(instance)
+    if (a) for (const g of a.engine.groups().filter((g) => !g.roster.dm)) await a.engine.leave(g.id).catch((err) => log(instance, `could not leave #${g.roster.name}:`, (err as Error).message))
+    await stopAgent(instance, 'removed')
+    writeRegistry(rest)
+    const dir = join(configRoot(), 'instances', instance)
+    deleteKey(instance, dir)
+    rmSync(dir, { recursive: true, force: true })
+    log('removed', instance)
+  }
+
+  const api: ControlApi = {
+    snapshot,
+    seat,
+    removeAgent,
+    async setWorkdir(instance, workdir) {
+      const reg = readRegistry()
+      const entry = reg[instance]
+      if (!entry) throw new SeatError('unknown-agent', `No agent ${instance}`)
+      writeRegistry({ ...reg, [instance]: { ...entry, workdir: workdirOf(workdir) } })
+      await load()
+    },
+    async pause() {
+      paused = true
+      for (const instance of [...agents.keys()]) await stopAgent(instance, 'stopped from the app')
+      log('agents stopped from the app')
+    },
+    async resume() {
+      paused = false
+      await load()
+      log('agents started from the app')
+    },
   }
 
   await load()
   // re-report every 5 minutes so the owner's app stays current
   setInterval(() => agents.forEach((a) => void a.report()), 5 * 60_000)
 
+  let control: Control | undefined
+  try {
+    control = await startControl(api, pairing, { port: Number(process.env.KURULTAY_PORT ?? DAEMON_PORT), origins: defaultOrigins() })
+    writeFileSync(portFile(), String(control.port), { mode: 0o600 })
+    log(`control server on http://127.0.0.1:${control.port}`)
+  } catch (err) {
+    // the agents keep working without the app connection, e.g. when another program holds the port
+    log(`control server not started: ${(err as Error).message}`)
+  }
+
   const srv = serveIpc({
-    agents: () => ({
-      pid: process.pid,
-      version: VERSION,
-      agents: [...agents.values()].map((a) => ({
-        instance: a.instance,
-        name: a.engine.name,
-        host: a.entry.host,
-        workdir: a.entry.workdir,
-        mode: a.engine.agentMode,
-        online: a.engine.pool.relays.some((r) => r.status === 'open'),
-        running: a.running,
-        lastRun: a.lastRun ? new Date(a.lastRun * 1000).toISOString() : undefined,
-        lastError: a.lastError,
-        councils: a.engine.groups().map((g) => g.roster.name),
-        groupIds: a.engine.groups().map((g) => g.id),
-      })),
-    }),
+    agents: () => ({ pid: process.pid, version: VERSION, agents: agentInfo() }),
+    get(path) {
+      if (path === '/pair/pending') return { pending: pairing.list(), paired: pairing.pairedCount() }
+      throw new Error('unknown')
+    },
     async call(instance, tool, args, signal) {
       const a = agents.get(instance)
       if (!a) throw new Error(`No background agent ${instance}`)
@@ -305,7 +412,7 @@ export async function runDaemon() {
         return { isError: true, content: [{ type: 'text', text: (err as Error).message }] }
       }
     },
-    async post(path) {
+    async post(path, body) {
       if (path === '/reload') {
         await load()
         return { ok: true, agents: agents.size }
@@ -314,12 +421,25 @@ export async function runDaemon() {
         setTimeout(() => shutdown(), 100)
         return { ok: true }
       }
+      if (path === '/pair/approve') {
+        const code = typeof body === 'object' && body !== null && 'code' in body ? String(body.code) : ''
+        const r = pairing.approve(code)
+        log('paired with', r.origin)
+        return { ok: true, origin: r.origin }
+      }
+      if (path === '/pair/revoke') {
+        pairing.revoke()
+        log('signed every paired browser out')
+        return { ok: true }
+      }
       throw new Error('unknown')
     },
   })
 
   const shutdown = async () => {
     srv.close()
+    await control?.close().catch(() => {})
+    rmSync(portFile(), { force: true })
     agents.forEach((a) => a.cancel('service stopping'))
     await Promise.all([...agents.values()].map((a) => a.engine.stop().catch(() => {})))
     process.exit(0)

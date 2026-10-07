@@ -20,7 +20,7 @@ export interface ServiceResult {
 
 function env() {
   const e: Record<string, string> = { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', HOME: home() }
-  for (const k of ['KURULTAY_HOME', 'KURULTAY_RELAYS', 'KURULTAY_BLOSSOM', 'KURULTAY_MACHINE', 'KURULTAY_NO_KEYCHAIN', 'XDG_CONFIG_HOME']) if (process.env[k]) e[k] = process.env[k]!
+  for (const k of ['KURULTAY_HOME', 'KURULTAY_RELAYS', 'KURULTAY_BLOSSOM', 'KURULTAY_MACHINE', 'KURULTAY_NO_KEYCHAIN', 'KURULTAY_PORT', 'KURULTAY_ORIGINS', 'XDG_CONFIG_HOME']) if (process.env[k]) e[k] = process.env[k]!
   return e
 }
 

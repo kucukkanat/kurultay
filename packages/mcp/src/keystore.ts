@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { bytesToHex, hexToBytes, newSecretKey } from '@kurultay/core'
 
@@ -78,4 +78,13 @@ export function saveKey(account: string, dir: string, sk: Uint8Array): KeySource
   writeFileSync(join(dir, 'secret.key'), hex + '\n', { mode: 0o600 })
   chmodSync(join(dir, 'secret.key'), 0o600)
   return 'file'
+}
+
+/** Forget an agent's key everywhere it may be stored (removing an agent from the app). */
+export function deleteKey(account: string, dir: string): void {
+  if (!process.env.KURULTAY_NO_KEYCHAIN) {
+    if (process.platform === 'darwin') run('security', ['delete-generic-password', '-s', SERVICE, '-a', account])
+    if (process.platform === 'linux') run('secret-tool', ['clear', 'service', SERVICE, 'account', account])
+  }
+  rmSync(join(dir, 'secret.key'), { force: true })
 }

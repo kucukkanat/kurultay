@@ -1875,3 +1875,51 @@ code.folder {
     width: 100vw;
   }
 }
+
+/* ------------------------------------------------------------------ background service (pairing, folders) */
+.daemon-card {
+  display: grid;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+.daemon-card h3 {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+  margin: 0;
+  font-size: 16px;
+}
+.daemon-card p {
+  margin: 0;
+}
+.pair-code {
+  font: 600 32px/1.2 var(--mono);
+  letter-spacing: 0.3em;
+  color: var(--ink);
+  padding: var(--s-2) 0;
+}
+.folder-picker .input {
+  flex: 1;
+  min-width: 0;
+}
+.dir-list {
+  list-style: none;
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow: auto;
+  border: var(--border-w) solid var(--line);
+  border-radius: var(--r-2);
+}
+.dir-list li {
+  padding: var(--s-1) var(--s-3);
+  border-bottom: var(--border-w) solid var(--line);
+}
+.dir-list li:last-child {
+  border-bottom: 0;
+}
+.agent-local {
+  display: grid;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}

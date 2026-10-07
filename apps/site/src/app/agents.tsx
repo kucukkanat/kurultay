@@ -1,15 +1,13 @@
 import { useMemo, useState } from 'preact/hooks'
-import { decodeTicket, shortKey, type AgentMode, type Kurultay } from '@kurultay/core'
+import { decodeTicket, shortKey, type AgentMode, type DaemonAgentInfo, type Kurultay } from '@kurultay/core'
 import { AgentProfileEditor } from './AgentProfile'
+import { daemon, useDaemon } from './daemon-client'
+import { act, Connection, FolderPicker, NPX } from './DaemonPanel'
+import { HOSTS_KEY, SeatDialog } from './SeatDialog'
 import { toast, useStore } from './store'
 import { Avatar, Icon, Modal, timeOf } from './ui'
 
-/** pinned to the exact build CI published, so npx can't serve an older cached copy */
-const DIST_REF: string = (import.meta as any).env?.VITE_DIST_REF || 'dist'
-// npm can't install a github: spec pinned to a commit hash, but a tarball URL works (and caches per commit)
-const JOIN_PREFIX = /^[0-9a-f]{40}$/.test(DIST_REF)
-  ? `npx -y https://codeload.github.com/kucukkanat/kurultay/tar.gz/${DIST_REF} join `
-  : 'npx -y github:kucukkanat/kurultay#dist join '
+const JOIN_PREFIX = `${NPX} join `
 
 const HOST_CHOICES: { id: string; label: string }[] = [
   { id: 'claude', label: 'Claude Code' },
@@ -20,7 +18,6 @@ const HOST_CHOICES: { id: string; label: string }[] = [
   { id: 'cursor', label: 'Cursor' },
   { id: 'gemini', label: 'Gemini CLI' },
 ]
-const HOSTS_KEY = 'kurultay:hosts'
 function lastHosts(): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(HOSTS_KEY) || 'null')
@@ -29,8 +26,15 @@ function lastHosts(): string[] {
   return ['claude']
 }
 
-/** "Add an agent": one command that seats every agent CLI on a machine in the chosen councils. */
+/** "Add your agents": through the paired background service when the page reaches it, else one command to run. */
 export function AddAgentDialog({ e, groupId, onClose }: { e: Kurultay; groupId?: string; onClose: () => void }) {
+  const d = useDaemon()
+  if (d.status === 'connected' && d.snapshot) return <SeatDialog e={e} groupId={groupId} onClose={onClose} snap={d.snapshot} />
+  return <CommandDialog e={e} groupId={groupId} onClose={onClose} />
+}
+
+/** The first run (no service yet) and the fallback when the browser can't reach it: one command that seats every agent CLI. */
+function CommandDialog({ e, groupId, onClose }: { e: Kurultay; groupId?: string; onClose: () => void }) {
   useStore()
   const councils = e.groups().filter((g) => !g.roster.dm)
   const [picked, setPicked] = useState<string[]>(groupId ? [groupId] : councils.slice(0, 1).map((g) => g.id))
@@ -61,6 +65,7 @@ export function AddAgentDialog({ e, groupId, onClose }: { e: Kurultay; groupId?:
 
   return (
     <Modal title="Add your agents" onClose={onClose} wide>
+      <Connection />
       <fieldset class="host-picks">
         <legend class="field-label">Which agents?</legend>
         <div class="chips">
@@ -80,7 +85,7 @@ export function AddAgentDialog({ e, groupId, onClose }: { e: Kurultay; groupId?:
       )}
       <div class={`command ${hosts.length ? '' : 'disabled'}`}>
         <code>{command.length > 120 ? command.slice(0, 64) + '…' + command.slice(-16) : command}</code>
-        <button class="btn primary small" onClick={copy} disabled={!hosts.length}>
+        <button class="btn primary small" onClick={copy} disabled={!hosts.length} data-testid="join-copy">
           {copied ? 'Copied' : 'Copy command'}
         </button>
       </div>
@@ -176,13 +181,48 @@ const ago = (ts?: number) => {
   return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} d ago`
 }
 
+/** Controls for an agent that runs on the paired computer: its folder, and removing it. */
+function LocalAgent({ agent }: { agent: DaemonAgentInfo }) {
+  const [folder, setFolder] = useState(agent.workdir)
+  const [confirming, setConfirming] = useState(false)
+  return (
+    <div class="agent-local" data-testid={`agent-local-${agent.instance}`}>
+      <span class="field-label">Working folder on this computer</span>
+      <FolderPicker value={folder} onChange={setFolder} testid={`agent-folder-${agent.instance}`}>
+        <button class="btn small primary" type="button" disabled={folder.trim() === agent.workdir || !folder.trim()} onClick={() => void act('Folder changed', () => daemon.setWorkdir(agent.instance, folder.trim()))} data-testid={`agent-folder-save-${agent.instance}`}>
+          Save
+        </button>
+      </FolderPicker>
+      <div class="row">
+        {confirming ? (
+          <>
+            <span class="member-meta">It leaves its councils and its key is deleted from this computer.</span>
+            <button class="btn small danger" type="button" onClick={() => void act(`${agent.name} removed`, () => daemon.removeAgent(agent.instance))} data-testid={`agent-remove-confirm-${agent.instance}`}>
+              Remove for good
+            </button>
+            <button class="btn small" type="button" onClick={() => setConfirming(false)} data-testid={`agent-remove-cancel-${agent.instance}`}>
+              Keep
+            </button>
+          </>
+        ) : (
+          <button class="btn small danger" type="button" onClick={() => setConfirming(true)} data-testid={`agent-remove-${agent.instance}`}>
+            Remove agent
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function AgentsList({ e }: { e: Kurultay }) {
+  const d = useDaemon()
   const list = myAgents(e)
   if (!list.length) return <p class="muted">None yet. Add your agents and they'll show up here once they take a seat.</p>
   return (
     <ul class="agent-cards">
       {list.map((a) => {
         const st = e.state.agentStatus?.[a.pubkey]
+        const here = d.snapshot?.agents.find((x) => x.pubkey === a.pubkey)
         const mine = !!e.state.agents[a.pubkey]
         const mode: AgentMode = e.state.agentModes?.[a.pubkey] ?? st?.mode ?? 'talk'
         const synced = !st || st.mode === mode
@@ -215,6 +255,8 @@ export function AgentsList({ e }: { e: Kurultay }) {
             ) : (
               <p class="member-meta">Answers only while its CLI is open. Run the “Add your agents” command again to let it answer in the background.</p>
             )}
+            {/* the folder the service last reported is the key: a change elsewhere resets the field */}
+            {here && <LocalAgent key={here.workdir} agent={here} />}
             {mine && (
               <label class="field mode-field">
                 <span class="field-label">When tagged, it may…</span>

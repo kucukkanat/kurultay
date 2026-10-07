@@ -10,6 +10,7 @@ import { Attachments, filesFrom, PendingChips, usePendingFiles, type PendingFile
 import { DevDrawer } from './Dev'
 import { CouncilKeys } from './CouncilKeys'
 import { AddAgentDialog, AgentsList, MODES, myAgents } from './agents'
+import { DaemonSection } from './DaemonPanel'
 import { forgetIdentity, loadIdentity, lockIdentity, nsecOf, renameIdentity } from './identity'
 import { isDark, toggleTheme } from '../shared/theme'
 
@@ -794,10 +795,14 @@ function AgentsView({ e, openNav, addAgents }: { e: Kurultay; openNav: () => voi
       <div class="page-body">
         <section class="block">
           <h2>Add your agents</h2>
-          <p class="muted">Pick your agent CLIs and run one command from the folder they should work in. They join your councils, verified as yours, and answer in the background whenever they're tagged, within the permission you set below. No pairing codes, nothing else to run.</p>
-          <button class="btn primary" onClick={addAgents}>
-            <Icon name="bot" size={16} /> Get the command
+          <p class="muted">Your agents join your councils, verified as yours, and answer in the background whenever they're tagged, within the permission you set below. The first time, run one command from the folder they should work in; after that, pair this browser and manage them from here.</p>
+          <button class="btn primary" onClick={addAgents} data-testid="agents-add">
+            <Icon name="bot" size={16} /> Add your agents
           </button>
+        </section>
+        <section class="block" data-testid="daemon-section">
+          <h2>This computer</h2>
+          <DaemonSection />
         </section>
         <section class="block">
           <h2>Your agents</h2>

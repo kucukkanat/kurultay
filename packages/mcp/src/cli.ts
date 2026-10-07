@@ -7,7 +7,7 @@ import { runInstall } from './install'
 import { runJoin } from './join'
 import { runDaemon } from './daemon'
 import { daemonLog, stopService } from './service'
-import { daemonPost, daemonStatus } from './ipc'
+import { daemonGet, daemonPost, daemonStatus } from './ipc'
 
 async function ensureWebSocket() {
   if (typeof (globalThis as any).WebSocket === 'undefined') {
@@ -37,6 +37,9 @@ Background service (keeps agents online and answers when they're tagged)
   logs                        Show the last 60 lines of the service log
   stop                        Stop the service and any running answer, and remove the login item
   daemon                      Run the service in the foreground (launchd/systemd start it for you)
+  pair <code>                 Let the web app manage this machine's agents: approve the 6-digit code it shows.
+                              Without a code, lists the browsers waiting (never their codes)
+      --revoke                sign every paired browser out
 
 MCP server
   mcp [--host <host>]         Serve MCP over stdio; what agent CLIs launch. --host picks the identity
@@ -62,6 +65,8 @@ Environment
   KURULTAY_MODEL          model shown on the agent card
   KURULTAY_APP_URL        web app URL used in links the server hands out
   KURULTAY_DEBUG          log relay traffic in the service log
+  KURULTAY_PORT           port of the service's local control server for the web app (default 47616; 0 picks one)
+  KURULTAY_ORIGINS        comma-separated extra web app origins the control server accepts
 
 Docs: https://kucukkanat.github.io/kurultay/docs/`
 
@@ -91,6 +96,10 @@ async function main() {
     if (!st) return console.log('The background service is not running. Run the "Add your agents" command from the app to start it.')
     console.log(`kurultay ${st.version} background service (pid ${st.pid})`)
     for (const a of st.agents) console.log(`  ${a.online ? '●' : '○'} ${a.name}  ${a.mode}  ${a.workdir}  ${a.councils.map((c) => '#' + c).join(' ')}${a.running ? '  (answering…)' : ''}`)
+    return
+  }
+  if (cmd === 'pair') {
+    process.exitCode = await runPair(process.argv.slice(3))
     return
   }
   if (cmd === 'logs') {
@@ -127,6 +136,35 @@ async function main() {
   process.on('SIGINT', close)
   process.on('SIGTERM', close)
   await app.connect(transport)
+}
+
+/** Approve (or revoke) the browsers that may manage this machine's agents. Only a local terminal can: it goes over the IPC socket. */
+async function runPair(argv: string[]): Promise<number> {
+  try {
+    if (argv.includes('--revoke')) {
+      await daemonPost('/pair/revoke')
+      console.log('Every paired browser was signed out. The app will ask to pair again.')
+      return 0
+    }
+    const code = argv.find((a) => !a.startsWith('-'))
+    if (code && !/^\d{6}$/.test(code)) {
+      console.error('The app shows a 6-digit code: kurultay pair 123456')
+      return 1
+    }
+    if (code) {
+      const r = await daemonPost<{ origin: string }>('/pair/approve', { code })
+      console.log(`✓ Paired with ${r.origin}. The app now manages the agents on this computer.`)
+      return 0
+    }
+    const { pending, paired } = await daemonGet<{ pending: { origin: string; expiresIn: number }[]; paired: number }>('/pair/pending')
+    for (const p of pending) console.log(`Waiting: ${p.origin} (expires in ${Math.max(0, p.expiresIn)} s)`)
+    console.log(pending.length ? 'Approve it with the code the app shows: kurultay pair 123456' : `No browser is waiting. Open the app → My agents → "Pair this browser". (${paired} paired)`)
+    return 0
+  } catch (err) {
+    const msg = (err as Error).message
+    console.error(/ENOENT|ECONNREFUSED/.test(msg) ? 'The background service is not running. Seat an agent with the "Add your agents" command first.' : msg)
+    return 1
+  }
 }
 
 main().catch((err) => {

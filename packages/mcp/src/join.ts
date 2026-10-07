@@ -1,86 +1,19 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from 'node:fs'
+import { copyFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
-import { decodeTicket, DEFAULT_AGENT_MODE, DEFAULT_RELAYS, Kurultay, now, pickPlayfulName, type AgentTicket, type State } from '@kurultay/core'
-import { configRoot, displayName, FileStorage } from './instance'
-import { saveKey } from './keystore'
-import { detectHosts, HOSTS, installFor, type Host } from './install'
+import { decodeTicket, DEFAULT_RELAYS, Kurultay, type AgentTicket } from '@kurultay/core'
+import { configRoot, FileStorage } from './instance'
+import { detectHosts, HOSTS, type Host } from './install'
+import { LABEL, seatAgents, type Prepared } from './seat'
 import { daemonAgents, daemonPost, daemonStatus } from './ipc'
 import { readRegistry, writeRegistry } from './daemon'
 import { daemonLog, startService } from './service'
-
-const LABEL: Record<Host, string> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  copilot: 'Copilot CLI',
-  pi: 'pi',
-  opencode: 'opencode',
-  cursor: 'Cursor',
-  gemini: 'Gemini CLI',
-  vscode: 'VS Code',
-}
 
 const c = {
   dim: (s: string) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s),
   ok: (s: string) => (process.stdout.isTTY ? `\x1b[32m${s}\x1b[0m` : s),
   warn: (s: string) => (process.stdout.isTTY ? `\x1b[33m${s}\x1b[0m` : s),
   bold: (s: string) => (process.stdout.isTTY ? `\x1b[1m${s}\x1b[0m` : s),
-}
-
-function alive(pid: number) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
-
-interface Prepared {
-  host: Host
-  name: string
-  dir: string
-  sk: Uint8Array
-  pubkey: string
-  busy: boolean
-}
-
-/** Write the ticket identity + pending joins for one host into its instance slot (#1). */
-function prepare(ticket: AgentTicket, host: Host): Prepared {
-  const instanceName = `${host}#1`
-  const dir = join(configRoot(), 'instances', instanceName)
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const file = join(dir, 'state.json')
-  const lock = join(dir, 'lock')
-  const busy = existsSync(lock) && alive(Number(readFileSync(lock, 'utf8').trim()))
-  let existing: State | null = null
-  try {
-    existing = JSON.parse(readFileSync(file, 'utf8'))
-  } catch {}
-  const { sk, pubkey, state } = Kurultay.fromTicket(ticket, host, existing)
-  if (existing && existing.inbox !== state.inbox) renameSync(file, `${file}.bak-${Date.now()}`)
-  saveKey(instanceName, dir, sk)
-  state.pk = pubkey
-  // Only a fresh identity gets a playful name: reseating, or an agent seated before names existed, is never renamed.
-  if (!state.agentSettings?.name && (!existing || existing.inbox !== state.inbox))
-    state.agentSettings = { mode: state.agentSettings?.mode ?? DEFAULT_AGENT_MODE, name: pickPlayfulName(namesInUse()), updatedAt: now() }
-  new FileStorage(file).save(state)
-  return { host, name: state.agentSettings?.name ?? displayName(instanceName), dir, sk, pubkey, busy }
-}
-
-/** Names of the agents already on this machine, so two hosts seated by one command never share a handle. */
-function namesInUse(): string[] {
-  const root = join(configRoot(), 'instances')
-  if (!existsSync(root)) return []
-  return readdirSync(root).flatMap((d) => {
-    try {
-      const name: unknown = JSON.parse(readFileSync(join(root, d, 'state.json'), 'utf8')).agentSettings?.name
-      return typeof name === 'string' ? [name] : []
-    } catch {
-      // A missing or broken neighbour state must not block seating; it simply reserves no name.
-      return []
-    }
-  })
 }
 
 /** Bring one prepared identity online briefly so admins can seat it right now. */
@@ -144,15 +77,13 @@ its own identity verified as yours, and seats it in the ticket's councils.`)
   }
 
   const prepared: Prepared[] = []
-  for (const host of hosts) {
-    const p = prepare(ticket, host)
-    const steps = installFor(host, { runtime, replacePlugin: true })
+  for (const { prepared: p, steps } of seatAgents(ticket, hosts, runtime)) {
     const problem = steps.find((s) => s.status === 'manual')
-    console.log(`  ${problem ? c.warn('!') : c.ok('✓')} ${LABEL[host].padEnd(12)} ${c.dim(p.name)}`)
+    console.log(`  ${problem ? c.warn('!') : c.ok('✓')} ${LABEL[p.host].padEnd(12)} ${c.dim(p.name)}`)
     if (problem?.detail) console.log(problem.detail.replace(/^/gm, '      '))
     const replaced = steps.find((s) => s.what === 'plugin' && s.status === 'written')
     if (replaced) console.log(c.dim(`      ${replaced.detail}`))
-    if (missing.includes(host)) console.log(c.dim(`      ${LABEL[host]} isn't installed here yet; it will pick this up once it is`))
+    if (missing.includes(p.host)) console.log(c.dim(`      ${LABEL[p.host]} isn't installed here yet; it will pick this up once it is`))
     prepared.push(p)
   }
 
