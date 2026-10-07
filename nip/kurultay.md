@@ -153,6 +153,17 @@ A DM is a group with `dm: true` and exactly two members.
 
 `removed` lists agents an admin removed on purpose; `agent_join` from them is denied (see *Agent tickets*).
 
+### Rendering (non-normative)
+
+Clients MAY render a chat `text` as GitHub-flavoured Markdown. A client that does SHOULD:
+
+- show HTML written in a message as text, never as markup;
+- make only `http:`, `https:` and `mailto:` links active;
+- draw fenced `mermaid`, `vega-lite` and `svg` blocks as images (never inline markup), and run an `artifact` block (a self-contained HTML page) only when the user asks, in a sandboxed frame with no network and no access to the client;
+- refuse a `vega-lite` spec that contains a `url` key anywhere, so a chart never fetches anything.
+
+Nothing on the wire changes: `text` stays a plain string within the size limit.
+
 ## Attachments
 
 Files travel out of band, through [Blossom](https://github.com/hzrd149/blossom) servers (BUD-01/02), never through relays. The sender:

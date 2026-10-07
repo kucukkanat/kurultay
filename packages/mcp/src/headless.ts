@@ -86,6 +86,16 @@ export interface Incoming {
   files?: { name: string; size: string; path?: string; note?: string }[]
 }
 
+/**
+ * How agents learn the formats the web app draws. One paragraph shared by the background prompt and the MCP server
+ * instructions so the two cannot drift apart; SKILL.md says the same in its own words.
+ */
+export const RICH_FORMATS =
+  'Messages are shown as Markdown (lists, tables, code blocks). For visuals you can also write fenced blocks that the app draws: ```mermaid (flowchart, sequence, ER, gantt or pie diagram), ```vega-lite (a Vega-Lite JSON chart; the numbers go inline under data.values, never a url), ```svg (a self-contained <svg>), and ```artifact (a self-contained HTML page with inline CSS and JS and no network; it runs sandboxed only when someone presses Run). Keep a message under 30 KB. When asked to draw, chart, diagram or show something visual, put it in the message as one of these blocks: do not write image or HTML files for it.'
+
+/** Answers are posted as one message; leave room under the 32 KiB message limit for the envelope. */
+const MAX_ANSWER_BYTES = 30 * 1024
+
 /** The prompt for one background turn: who you are, the recent conversation, what's new, and the rules. */
 export function buildPrompt(e: Kurultay, incoming: Incoming[], mode: AgentMode, workdir: string, contextSize = 30): string {
   const byGroup = new Map<string, Incoming[]>()
@@ -130,6 +140,7 @@ export function buildPrompt(e: Kurultay, incoming: Incoming[], mode: AgentMode, 
     '## How to answer',
     'Write only your reply to the council as your final answer: it will be posted for you, addressed to whoever asked. For a task, your final answer is the task result.',
     'Be brief and concrete. Do not use any Kurultay tools for this.',
+    RICH_FORMATS,
     mode === 'talk' || mode === 'off'
       ? 'You cannot share files in this mode.'
       : 'To share a file from your working folder with the council, put it on its own line as [[attach: relative/path]] (up to 10, 25 MB each). It is encrypted for the council only.',
@@ -141,9 +152,10 @@ export function buildPrompt(e: Kurultay, incoming: Incoming[], mode: AgentMode, 
 
 /** Strip terminal colour codes and CLI chatter from an answer. */
 export function cleanAnswer(raw: string): string {
-  return raw
+  const text = raw
     .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
     .replace(/\r/g, '')
     .trim()
-    .slice(0, 8000)
+  // a cap in bytes, not characters: a chart or artifact near the prompt's 30 KB must survive whole
+  return new TextDecoder().decode(new TextEncoder().encode(text).slice(0, MAX_ANSWER_BYTES))
 }

@@ -109,41 +109,6 @@ export function timeOf(ts: number) {
   return d.toDateString() === today.toDateString() ? hm : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${hm}`
 }
 
-export function Rich({ text, names }: { text: string; names: Set<string> }) {
-  // fenced code, inline code, links and @mentions — nothing else, and never raw HTML
-  const blocks = text.split(/```(?:\w+)?\n?([\s\S]*?)```/g)
-  return (
-    <>
-      {blocks.map((b, i) =>
-        i % 2 === 1 ? (
-          <pre key={i}>
-            <code>{b}</code>
-          </pre>
-        ) : (
-          <span key={i}>
-            {b.split(/(`[^`\n]+`|https?:\/\/[^\s)]+|@[\w#.\-]+(?:@[\w.\-]+)?)/g).map((p, j) => {
-              if (p.startsWith('`') && p.endsWith('`') && p.length > 1) return <code key={j}>{p.slice(1, -1)}</code>
-              if (/^https?:\/\//.test(p))
-                return (
-                  <a key={j} href={p} target="_blank" rel="noopener noreferrer">
-                    {p}
-                  </a>
-                )
-              if (p.startsWith('@') && (names.has(p.slice(1).toLowerCase()) || names.has(p.slice(1).toLowerCase().split('@')[0]) || p === '@all' || p === '@here'))
-                return (
-                  <span key={j} class="mention">
-                    {p}
-                  </span>
-                )
-              return p
-            })}
-          </span>
-        ),
-      )}
-    </>
-  )
-}
-
 /** Shown only when no relay answers. No button: the relay pool already reconnects by itself. */
 export function RelayHealthBadge() {
   useStore()

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { decodeLink, shortKey, type GroupState, type Kurultay, type Message, type Task } from '@kurultay/core'
 import { appUrl, devMode, getBlossom, getRelays, markRead, setBlossomPref, setDevMode, setRelaysPref, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
 import { watchWord } from './devmode'
-import { Avatar, CopyField, Icon, Modal, RelayHealthBadge, Rich, timeOf } from './ui'
+import { Avatar, CopyField, Icon, Modal, RelayHealthBadge, timeOf } from './ui'
+import { Markdown } from './markdown'
+import { richBlocks } from './richblocks'
 import { Attachments, filesFrom, PendingChips, usePendingFiles, type PendingFiles } from './files'
 import { DevDrawer } from './Dev'
 import { CouncilKeys } from './CouncilKeys'
@@ -306,7 +308,7 @@ function MessageRow({ e, g, m, prev, names }: { e: Kurultay; g: GroupState; m: M
         ) : (
           m.text && (
             <div class="msg-text">
-              <Rich text={m.text} names={names} />
+              <Markdown text={m.text} names={names} blocks={richBlocks} />
             </div>
           )
         )}

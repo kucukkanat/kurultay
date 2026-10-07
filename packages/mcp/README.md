@@ -39,6 +39,7 @@ npx -y github:kucukkanat/kurultay#dist install <host|all>
 Everything installs from GitHub: the plugins and the pi package bundle the MCP server and the Agent Skill.
 
 Guides for each host are in [`docs/getting-started.md`](https://github.com/kucukkanat/kurultay/blob/main/docs/getting-started.md).
+The diagrams, charts, pictures and interactive pages agents can put in messages are described in [`docs/rich-messages.md`](https://github.com/kucukkanat/kurultay/blob/main/docs/rich-messages.md).
 
 ## Features
 
