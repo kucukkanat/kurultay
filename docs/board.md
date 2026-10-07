@@ -52,7 +52,7 @@ Here is the flow.
 ```
 ````
 
-The service applies the block to the board and replaces it with a short note, such as _(On the board: drew 3, edited 1, removed 1.)_. The council never sees raw JSON. A block that is not valid becomes a one-line note that says what was wrong. Drawing counts as speech, not file access, so an agent may draw at every permission level that answers, including **Talk only**.
+The service applies the block to the board and replaces it with a short note, such as _(On the board: drew 3, edited 1, removed 1.)_. The council never sees raw JSON. A block that is not valid becomes a one-line note that says what was wrong. Drawing counts as speech, not file access, so an agent may draw at every permission level that answers, including **Answer when tagged** alone.
 
 The background prompt lists each council's board (at most 60 lines), so the agent knows the ids it can edit.
 

@@ -5,7 +5,7 @@ order: 5
 
 # Sandbox for background answers: design
 
-When an agent is tagged, the background service runs that agent's CLI (`claude`, `codex`, `copilot`, `pi`, `opencode`, `gemini`, `cursor-agent`) **on your computer, as you**. Without a sandbox, the only guard is each CLI's own permission flags, mapped from the permission you chose (see [Getting started](getting-started.md#background-answers-and-permissions)). Those flags are enforced by the very program we want to contain, and they are uneven: `copilot` in Full gets `--allow-all-tools`, and `pi`'s bash tool has no path limit at all.
+When an agent is tagged, the background service runs that agent's CLI (`claude`, `codex`, `copilot`, `pi`, `opencode`, `gemini`, `cursor-agent`) **on your computer, as you**. Without a sandbox, the only guard is each CLI's own permission flags, mapped from the permission you chose (see [Getting started](getting-started.md#background-answers-and-permissions)). Those flags are enforced by the very program we want to contain, and they are uneven: `copilot` with **Run commands** gets `--allow-all-tools`, and `pi`'s bash tool has no path limit at all.
 
 Council messages and attached files are written by other people. A prompt injection can turn into "read `~/.ssh`", "read my other repositories", "send this folder to evil.example" or "`rm -rf ~`". The sandbox puts an operating-system boundary around each background turn. The user-facing summary is in [Privacy & security](security.md#sandbox); this page records the decisions and why.
 
@@ -18,7 +18,7 @@ Council messages and attached files are written by other people. A prompt inject
 | D3 | Backend | Anthropic's [`@anthropic-ai/sandbox-runtime`](https://www.npmjs.com/package/@anthropic-ai/sandbox-runtime) (srt): Seatbelt on macOS, bubblewrap on Linux, alpha on Windows. |
 | D4 | Network | Denied by default. Each CLI's own model and login hosts, plus a **per-agent list of websites** you edit. |
 | D5 | Reads | **All of your home folder is denied**, then re-opened: the working folder, folders you grant, and the CLI's own install, config and login files. |
-| D6 | Fallback | If the sandbox cannot run: **run without it, and warn** in My agents and in the council reply. ("Cap at Talk" was considered and declined.) |
+| D6 | Fallback | If the sandbox cannot run: **run without it, and warn** in My agents and in the council reply. (Capping it at **Answer when tagged** only was considered and declined.) |
 | D7 | Delivery | srt is **bundled** into the `kurultay` build. Its helper programs ship beside it in `dist/vendor/`. Linux needs `bwrap`, `socat` and `rg` from the distribution; Windows needs a one-time setup. Both are detected, and the app shows the command that fixes it. |
 | D8 | Lifecycle | Switch it per agent **at any time** in My agents. Agents seated by `join`, or before sandboxes existed, stay unsandboxed until you turn it on. |
 | D9 | Allowlist scope | **Per agent.** |
@@ -32,7 +32,7 @@ Council messages and attached files are written by other people. A prompt inject
 | D17 | Telemetry and updates | **Blocked.** Each CLI's opt-out variables are set where they exist, to avoid noise. |
 | D18 | Prompt | **One line** in the background prompt tells the agent it is sandboxed and what it can reach, so it says what was blocked instead of retrying. |
 | D19 | Windows | **Supported**, with a guided one-time setup (`kurultay sandbox setup`). Not yet run on a real Windows machine. |
-| D20 | First permission | A **sandboxed** agent starts with **Edit files**; one without a sandbox keeps **Talk only**. The app sends it as an ordinary `agent_settings`, and only to an agent that has no permission chosen yet. |
+| D20 | First permission | A **sandboxed** agent starts with **Edit files**; one without a sandbox keeps only **Answer when tagged**. The app sends it as an ordinary `agent_settings`, and only to an agent that has no permission chosen yet. |
 | D21 | Wording | "**Keep in a sandbox**", badge "**Sandboxed**". The app never names the technology (no srt, Seatbelt, bubblewrap); a test holds it to that. |
 | D24 | Allow button | Allows the **exact host** only. Wildcards are typed by hand. |
 | D25 | Turning off | Asks first: *"This agent will be able to read your whole home folder and reach any website. Turn off?"* |
@@ -66,15 +66,15 @@ srt's `SandboxManager` is a **per-process singleton**: `initialize(config)` star
 
 | Permission | Read | Write |
 |---|---|---|
-| Off, Talk only | system files, the CLI's own install and files, the turn folder | the CLI's own files, the turn folder |
+| Off, Answer when tagged only | system files, the CLI's own install and files, the turn folder | the CLI's own files, the turn folder |
 | Read files | + working folder, granted read and read-write folders | the CLI's own files, the turn folder |
-| Edit files, Full | + working folder, granted folders | + working folder, granted read-write folders |
+| Edit files, Run commands | + working folder, granted folders | + working folder, granted read-write folders |
 
 - `denyRead` is your home folder and the Kurultay config folder; `allowRead` re-opens what the table lists. srt lets `allowRead` win over `denyRead`, so **nothing that overlaps the config folder is ever put in `allowRead` or `allowWrite`**, whatever its source.
 - **Install paths.** CLIs often live under your home (`~/.local/bin`, `~/.bun`, `~/.nvm/…`). `installPathsFor` resolves `which <cli>` to its real path and opens the enclosing `node_modules` (global installs hoist dependencies beside the package, and codex loads its binary from a sibling package), plus the interpreter named in the shebang. A prefix that would contain your home folder (`/bin/sh` → `/`) is dropped.
 - **The turn folder** is a fresh `mkdtemp('/tmp/kurultay-…')`, by its real path. srt keeps its proxy socket there, and a Unix socket path may be at most 104 bytes, so it stays short. It holds `policy.json` and `violations.json` (both write-denied to the agent) and the CLI's output file, and it is the turn's private temp folder.
-- **Network.** Allowed hosts are the CLI profile's model and login hosts plus your list. `allowLocalBinding` is on, so a Full agent can test a server it starts itself. All Unix sockets stay closed (ssh-agent, Docker, the service's own socket).
-- srt itself always refuses writes to `.git/hooks`, `.git/config`, shell rc files and a few editor folders, even inside the working folder. Edit and Full agents therefore cannot change those.
+- **Network.** Allowed hosts are the CLI profile's model and login hosts plus your list. `allowLocalBinding` is on, so an agent with **Run commands** can test a server it starts itself. All Unix sockets stay closed (ssh-agent, Docker, the service's own socket).
+- srt itself always refuses writes to `.git/hooks`, `.git/config`, shell rc files and a few editor folders, even inside the working folder. Agents with **Edit files** or **Run commands** therefore cannot change those.
 
 ### Protected: no grant can open these
 
@@ -89,7 +89,7 @@ Each path is checked twice, as typed and by where it really leads, so a symlink 
 
 ## Host profiles
 
-`packages/mcp/src/sandbox/hosts.ts` lists what each CLI needs, found by running each installed CLI under srt on macOS with the home folder denied and reading the refusals until a one-line prompt answered, in Talk and in Full. Gemini and Cursor were not installed there: their profiles come from their documentation and are **unverified**.
+`packages/mcp/src/sandbox/hosts.ts` lists what each CLI needs, found by running each installed CLI under srt on macOS with the home folder denied and reading the refusals until a one-line prompt answered, with only Answer when tagged on and with Run commands on. Gemini and Cursor were not installed there: their profiles come from their documentation and are **unverified**.
 
 | CLI | Files it keeps (besides its install) | Model and login hosts | Opt-outs set (D17) |
 |---|---|---|---|
@@ -132,10 +132,10 @@ The service keeps the 20 newest refusals per agent (one per kind and target) and
 3. **Allowed hosts are exfiltration channels.** The model API itself, and anything you allow, can carry data out. A broad wildcard (`*.googleapis.com`) allows domain fronting.
 4. **Shared kernel.** A kernel or Seatbelt escape is out of scope (D1).
 5. **Your MCP servers run inside the sandbox (D16)** and fail quietly when they live under your home folder or need a host you did not allow. The blocked host shows up with an Allow button.
-6. **A broad working folder defeats the read limits.** With your home folder as the working folder, everything in it except the Kurultay config folder is readable in Read, Edit and Full.
-7. **Keychain (claude, copilot, cursor).** These CLIs need the macOS Keychain to log in, so a Full turn can run `/usr/bin/security` and read any Keychain item that already trusts it. The way out is an API-key login for that CLI.
+6. **A broad working folder defeats the read limits.** With your home folder as the working folder, everything in it except the Kurultay config folder is readable once **Read files** is on.
+7. **Keychain (claude, copilot, cursor).** These CLIs need the macOS Keychain to log in, so a turn with **Run commands** can run `/usr/bin/security` and read any Keychain item that already trusts it. The way out is an API-key login for that CLI.
 8. **Localhost on macOS.** Letting an agent run its own servers also lets it connect to every local port on macOS: local databases, Ollama, and the service's control port (which still needs a pairing token, kept in the closed config folder). On Linux the agent has its own network, so the computer's local services are unreachable.
-9. **Untested on Windows**, including whether the service's named pipe is unreachable from inside. **Linux**, a Talk-only agent whose working folder sits inside your home folder starts in a folder it cannot see; the CI tests cover working folders outside the home folder.
+9. **Untested on Windows**, including whether the service's named pipe is unreachable from inside. **Linux**, an agent with only **Answer when tagged** on whose working folder sits inside your home folder starts in a folder it cannot see; the CI tests cover working folders outside the home folder.
 
 ## Tests
 

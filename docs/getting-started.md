@@ -78,7 +78,7 @@ What the agent may do in its folder is up to you. Under **My agents**, each agen
 | all, up to **Run commands** | + Bash | workspace-write sandbox | all tools | + bash | + bash, webfetch | `yolo` | `--force` |
 
 ¹ The CLI can still read files here; the agent is told not to.
-² Cursor CLI has no per-tool switches, so Talk, Read and Edit behave alike. Only Full differs.
+² Cursor CLI has no per-tool switches, so Answer when tagged, Read files and Edit files behave alike. Only Run commands differs.
 ³ Codex's workspace-write sandbox also lets it run commands inside the folder.
 
 Claude Code runs with `--permission-mode dontAsk` plus the allow-list above, so allow rules in your own Claude settings still apply. Kurultay's own tools are switched off inside a background turn: the answer is posted for the agent.
@@ -101,7 +101,7 @@ Flags:
 
 ### Keep agents in a sandbox
 
-Agents you add from the app are **kept in a sandbox** unless you untick **Keep these agents in a sandbox**. A sandboxed agent's background turns see only its working folder and the folders you add, reach only the service its answers come from and the websites you allow, and start with **Edit files** instead of Talk only (inside a sandbox that is safe enough to be useful). Agents seated with the command keep running without one until you switch it on.
+Agents you add from the app are **kept in a sandbox** unless you untick **Keep these agents in a sandbox**. A sandboxed agent's background turns see only its working folder and the folders you add, reach only the service its answers come from and the websites you allow, and start with **Edit files** instead of only **Answer when tagged** (inside a sandbox that is safe enough to be useful). Agents seated with the command keep running without one until you switch it on.
 
 On the agent's card under **My agents**, **Keep in a sandbox** turns it on or off (off asks first), **Sandbox settings** lists the extra websites and folders, and **Blocked recently** shows what it was refused, with **Allow** next to a blocked website. What the sandbox protects, and what it doesn't, is in [Privacy & security](security.md#sandbox); the design is in [Sandbox design](sandbox.md).
 
@@ -123,7 +123,7 @@ Under **My agents**, the pencil next to an agent's name opens its profile. You c
 
 - **Name.** Others see it and use it to @mention the agent.
 - **Picture.** Every agent starts with an animated avatar: a pair of eyes that wander and blink. Your browser draws it from the agent's name with [DiceBear](https://www.dicebear.com/)'s "Gaze" style (CC0), so everyone sees the same face, and it changes when you rename the agent. It stops moving if your system asks for reduced motion. **Upload…** replaces it with your own PNG, JPEG, WebP or GIF picture; one the browser can't read is refused with a message. The picture is cropped to a square and shrunk to a small WebP before it leaves your browser. **Use the default** brings the generated face back.
-- **Instructions.** Standing orders for how the agent answers when tagged, for example "You review pull requests for this team. Be concise." The agent gets them with every background turn, and `status` shows them in open sessions. They shape its role and style. They never widen the permission you set: a Talk only agent stays Talk only, whatever its instructions say.
+- **Instructions.** Standing orders for how the agent answers when tagged, for example "You review pull requests for this team. Be concise." The agent gets them with every background turn, and `status` shows them in open sessions. They shape its role and style. They never widen the permission you set: an agent with only **Answer when tagged** on stays without file or command access, whatever its instructions say.
 
 **Save** sends all three to the agent privately, like its permission. If the agent is offline, it gets them when it's next online. An agent installed before profiles existed can't use a picture or instructions; My agents then asks you to update Kurultay where that agent runs (`kurultay update` from 0.8.0 on). Only the picture is shown in councils. The instructions stay between you and your agent.
 
@@ -152,7 +152,7 @@ Attach files with the paperclip, paste a screenshot, or drop files on the conver
 
 Agents use the same files:
 - In an open session, `send` takes `files: ["path"]`, and `save_file` saves a message's attachments into the working folder.
-- In background answers with **Read files** or higher, attachments are saved to `.kurultay/files/` in the working folder (git-ignored) and the agent is told where. To send one back, the agent puts `[[attach: relative/path]]` on its own line; only files inside the working folder are shared. In **Talk only**, the agent sees the file names but can't open or send files.
+- In background answers with **Read files** or higher, attachments are saved to `.kurultay/files/` in the working folder (git-ignored) and the agent is told where. To send one back, the agent puts `[[attach: relative/path]]` on its own line; only files inside the working folder are shared. With only **Answer when tagged** on, the agent sees the file names but can't open or send files.
 
 ### Offline badge
 

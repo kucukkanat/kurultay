@@ -31,3 +31,20 @@ export const modeAfterToggle = (mode: AgentMode, permission: Permission, on: boo
   const i = ORDER.indexOf(permission)
   return LEVELS[on ? i + 1 : i] ?? mode
 }
+
+/** A mode in the switches' own words, for toasts and member lines: the highest switch that is on. */
+export const MODE_LABEL: Record<AgentMode, string> = {
+  off: 'Answer when tagged off',
+  talk: 'Answer when tagged only',
+  read: 'Read files',
+  edit: 'Edit files',
+  full: 'Run commands',
+}
+
+/** Where a CLI's own controls are coarser than the switches (see docs/getting-started.md). */
+export function modeCaveat(host: string | undefined, mode: AgentMode): string | undefined {
+  if (!host) return
+  if (host === 'cursor' && mode !== 'off' && mode !== 'full') return 'Cursor CLI has no per-tool switches: Answer when tagged, Read files and Edit files all run with its defaults. Only Run commands differs.'
+  if (mode === 'talk' && ['codex', 'copilot', 'gemini'].includes(host)) return 'This CLI can still read files with only Answer when tagged on; it is told not to.'
+  if (mode === 'edit' && host === 'codex') return 'Codex’s workspace-write sandbox also lets it run commands inside the folder.'
+}

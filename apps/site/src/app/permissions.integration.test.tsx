@@ -43,10 +43,10 @@ afterAll(async () => {
 })
 
 /** the agent applies what it was sent and reports back, as the background service does */
-const reported = async (mode: string) => {
+const reported = async (mode: string, host?: string) => {
   await until(() => agent.agentMode === mode)
-  await agent.reportStatus({ background: true, headless: true, workdir: '/w', running: false })
-  await until(() => owner.state.agentStatus?.[agent.pubkey]?.mode === mode)
+  await agent.reportStatus({ host, background: true, headless: true, workdir: '/w', running: false })
+  await until(() => owner.state.agentStatus?.[agent.pubkey]?.mode === mode && owner.state.agentStatus[agent.pubkey]?.host === host)
 }
 
 test('a toggled switch reaches the agent as one of the five modes', async () => {
@@ -78,6 +78,11 @@ test('in the agent card, Run commands brings every switch below it along and Ans
   sw('answer').click()
   await reported('off')
   expect(['answer', 'read', 'edit', 'run'].map((id) => sw(id).checked)).toEqual([false, false, false, false])
+  // a coarser CLI's note speaks in the switches' names, never the retired mode names
+  sw('read').click()
+  await reported('read', 'cursor')
+  await until(() => root.textContent?.includes('Only Run commands differs'))
+  expect(root.textContent).not.toMatch(/Talk[ -]only|\bFull\b|\bTalk\b/)
   off()
   render(null, root)
   root.remove()

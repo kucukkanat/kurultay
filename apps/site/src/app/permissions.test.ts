@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import type { AgentMode } from '@kurultay/core'
-import { modeAfterToggle, PERMISSIONS, switchesOf, type Permission } from './permissions'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { MODE_LABEL, modeAfterToggle, modeCaveat, PERMISSIONS, switchesOf, type Permission } from './permissions'
+import { SANDBOX_COPY } from './sandbox'
 
 const MODES: AgentMode[] = ['off', 'talk', 'read', 'edit', 'full']
 const IDS: Permission[] = PERMISSIONS.map((p) => p.id)
@@ -46,4 +49,34 @@ test('a switch is never on unless every switch below it is (run => edit => read 
 
 test('turning on the highest switch a mode has returns that mode', () => {
   for (const m of MODES.slice(1)) expect(modeAfterToggle(m, [...IDS].reverse().find((p) => switchesOf(m)[p]) ?? 'answer', true)).toBe(m)
+})
+
+// the picker these replaced called the levels Talk only / Read / Edit / Full; owners only ever see the switches now
+const RETIRED = /Talk[ -]only|\bFull\b|(at|in) Talk\b|Talk, Read/
+
+test('each mode is named after the highest switch it has on', () => {
+  const labels = PERMISSIONS.map((p) => p.label)
+  expect(MODES.slice(2).map((m) => MODE_LABEL[m])).toEqual(labels.slice(1))
+  expect(MODE_LABEL.talk).toContain(labels[0] ?? '')
+  expect(MODE_LABEL.off).toContain(labels[0] ?? '')
+})
+
+test('CLI caveats appear only where the CLI is coarser, in the switches’ names', () => {
+  expect(modeCaveat(undefined, 'talk')).toBeUndefined()
+  expect(modeCaveat('claude', 'read')).toBeUndefined()
+  expect(modeCaveat('cursor', 'full')).toBeUndefined()
+  expect(modeCaveat('cursor', 'off')).toBeUndefined()
+  expect(modeCaveat('cursor', 'edit')).toContain('Only Run commands differs')
+  expect(modeCaveat('gemini', 'talk')).toContain('only Answer when tagged on')
+  expect(modeCaveat('codex', 'edit')).toContain('run commands')
+  for (const host of ['cursor', 'codex', 'copilot', 'gemini']) for (const m of MODES) expect(modeCaveat(host, m) ?? '').not.toMatch(RETIRED)
+  expect(Object.values(MODE_LABEL).join(' ')).not.toMatch(RETIRED)
+  expect(Object.values(SANDBOX_COPY).join(' ')).not.toMatch(RETIRED)
+})
+
+test('the docs and READMEs name permissions by their switches', () => {
+  const root = join(import.meta.dir, '../../../..')
+  const files = [...readdirSync(join(root, 'docs')).filter((f) => f.endsWith('.md')).map((f) => join('docs', f)), 'README.md', 'packages/mcp/README.md']
+  const stale = files.filter((f) => RETIRED.test(readFileSync(join(root, f), 'utf8')))
+  expect(stale).toEqual([])
 })

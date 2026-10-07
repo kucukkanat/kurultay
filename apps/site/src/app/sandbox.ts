@@ -21,7 +21,7 @@ export const SANDBOX_COPY = {
   settings: 'Sandbox settings',
   blocked: 'Blocked recently',
   startsEdit: 'They start with “Edit files” in their working folder. Choose what each may do under My agents.',
-  startsTalk: 'They start as “Talk only”: no file or command access. Choose what each may do under My agents.',
+  startsTalk: 'They start with only “Answer when tagged”: no file or command access. Choose what each may do under My agents.',
 } as const
 
 /** How a blocked item is described in the list. */

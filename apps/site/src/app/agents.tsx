@@ -4,9 +4,10 @@ import { AgentProfileEditor } from './AgentProfile'
 import { daemon, useDaemon } from './daemon-client'
 import { act, Connection, FolderPicker, NPX } from './DaemonPanel'
 import { SandboxSettings } from './SandboxSettings'
+import { SANDBOX_COPY } from './sandbox'
 import { HOSTS_KEY, SeatDialog } from './SeatDialog'
 import { toast, useStore } from './store'
-import { modeAfterToggle, PERMISSIONS, switchesOf } from './permissions'
+import { MODE_LABEL, modeAfterToggle, modeCaveat, PERMISSIONS, switchesOf } from './permissions'
 import { Avatar, Icon, Modal, timeOf } from './ui'
 
 const JOIN_PREFIX = `${NPX} join `
@@ -136,7 +137,7 @@ function CommandDialog({ e, groupId, onClose }: { e: Kurultay; groupId?: string;
           </ul>
         )}
       </div>
-      {seated.length > 0 && <p class="muted small-note">They start as “Talk only”. Choose what they may do in that folder under My agents.</p>}
+      {seated.length > 0 && <p class="muted small-note" data-testid="join-start-mode">{SANDBOX_COPY.startsTalk}</p>}
       <div class="row end">
         <button class="btn" onClick={onClose}>
           {seated.length ? 'Done' : 'Close'}
@@ -159,22 +160,6 @@ export function myAgents(e: Kurultay) {
     }
   }
   return [...out.values()].sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name))
-}
-
-export const MODES: { id: AgentMode; label: string; hint: string }[] = [
-  { id: 'off', label: 'Off', hint: 'Stays in its councils but only answers from an open session.' },
-  { id: 'talk', label: 'Talk only', hint: 'Answers from the conversation. No file or command access.' },
-  { id: 'read', label: 'Read files', hint: 'May read files in its working folder.' },
-  { id: 'edit', label: 'Edit files', hint: 'May read and change files in its working folder.' },
-  { id: 'full', label: 'Full', hint: 'May read, edit and run commands in its working folder.' },
-]
-
-/** where a CLI's own controls are coarser than the permission picked (see docs/getting-started.md) */
-function modeCaveat(host: string | undefined, mode: AgentMode): string | undefined {
-  if (!host) return
-  if (host === 'cursor' && mode !== 'off' && mode !== 'full') return 'Cursor CLI has no per-tool switches: Talk, Read and Edit all run with its defaults. Only Full differs (it also runs commands).'
-  if (mode === 'talk' && ['codex', 'copilot', 'gemini'].includes(host)) return 'This CLI can still read files in talk-only mode; it is told not to.'
-  if (mode === 'edit' && host === 'codex') return 'Codex’s workspace-write sandbox also lets it run commands inside the folder.'
 }
 
 const ago = (ts?: number) => {
@@ -278,7 +263,7 @@ export function AgentsList({ e }: { e: Kurultay }) {
                       onChange={(ev) => {
                         const next = modeAfterToggle(mode, p.id, (ev.target as HTMLInputElement).checked)
                         e.setAgentMode(a.pubkey, next)
-                          .then(() => toast(`${a.name}: ${MODES.find((x) => x.id === next)?.label ?? next}`))
+                          .then(() => toast(`${a.name}: ${MODE_LABEL[next]}`))
                           .catch((x) => toast(x.message, 'error'))
                       }}
                     />

@@ -11,7 +11,8 @@ import { Attachments, filesFrom, PendingChips, usePendingFiles, type PendingFile
 import { DevDrawer } from './Dev'
 import { BoardPanel, escLeavesFullBoard } from './BoardPanel'
 import { CouncilKeys } from './CouncilKeys'
-import { AddAgentDialog, AgentsList, MODES, myAgents } from './agents'
+import { AddAgentDialog, AgentsList, myAgents } from './agents'
+import { MODE_LABEL } from './permissions'
 import { DaemonSection } from './DaemonPanel'
 import { NotificationSettings } from './NotificationSettings'
 import { forgetIdentity, loadIdentity, lockIdentity, nsecOf, renameIdentity } from './identity'
@@ -706,7 +707,7 @@ function MembersPanel({ e, g, close, go }: { e: Kurultay; g: GroupState; close: 
               <div class="member-meta">
                 {m.kind}
                 {m.verified ? ` · ${m.verified.owner === e.pubkey ? 'yours' : `owned by ${m.verified.ownerName}`}` : m.kind === 'agent' ? ' · unverified' : ''}
-                {m.verified?.owner === e.pubkey && e.state.agentStatus?.[m.pubkey]?.background ? ` · answers in background (${MODES.find((x) => x.id === (e.state.agentModes?.[m.pubkey] ?? e.state.agentStatus![m.pubkey].mode))?.label})` : ''}
+                {m.verified?.owner === e.pubkey && e.state.agentStatus?.[m.pubkey]?.background ? ` · answers in background (${MODE_LABEL[e.state.agentModes?.[m.pubkey] ?? e.state.agentStatus?.[m.pubkey]?.mode ?? 'talk']})` : ''}
                 {m.card?.client && ` · ${m.card.client}`}
               </div>
               {m.card?.description && <div class="member-card">{m.card.description}</div>}
