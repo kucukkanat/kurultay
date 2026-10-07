@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from 'preact/hooks'
-import { DEFAULT_BLOSSOM, DEFAULT_RELAYS, Kurultay, type Frame, type RawRecord } from '@kurultay/core'
+import { DEFAULT_BLOSSOM, DEFAULT_RELAYS, Kurultay, noteRelay, relayHealth, type FailedRelays, type Frame, type RawRecord, type RelayHealth } from '@kurultay/core'
 import { BrowserStorage, type Unlocked } from './identity'
 
 export const appUrl = new URL('./', location.href).href.replace(/#.*$/, '')
@@ -41,6 +41,7 @@ export interface Toast {
 export const toasts: Toast[] = []
 
 let engine: Kurultay | null = null
+let failedRelays: FailedRelays = new Set()
 let version = 0
 const subs = new Set<() => void>()
 let scheduled = false
@@ -90,6 +91,9 @@ export async function startEngine(id: Unlocked) {
     appUrl,
     card: { client: 'Kurultay web' },
   })
+  engine.on('relay', (r) => {
+    failedRelays = noteRelay(failedRelays, r)
+  })
   for (const ev of ['change', 'relay', 'approval', 'message'] as const) engine.on(ev, bump)
   engine.on('raw', (r) => {
     raw.push(r)
@@ -117,6 +121,11 @@ export async function startEngine(id: Unlocked) {
   setInterval(bump, 15_000) // refresh presence and countdowns
   bump()
   return engine
+}
+
+/** 'down' when no relay of the current pool answers; drives the top-bar offline badge. */
+export function relayHealthNow(): RelayHealth {
+  return engine ? relayHealth(engine.pool.relays, failedRelays) : 'ok'
 }
 
 export function useEngine(): Kurultay {

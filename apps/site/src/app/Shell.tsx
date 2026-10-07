@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { decodeLink, shortKey, type GroupState, type Kurultay, type Message, type Task } from '@kurultay/core'
 import { appUrl, devMode, getBlossom, getRelays, markRead, setBlossomPref, setDevMode, setRelaysPref, toast, toasts, typingMap, unreadCount, useEngine, useStore } from './store'
 import { watchWord } from './devmode'
-import { Avatar, CopyField, Icon, Modal, Rich, timeOf } from './ui'
+import { Avatar, CopyField, Icon, Modal, RelayHealthBadge, Rich, timeOf } from './ui'
 import { Attachments, filesFrom, PendingChips, usePendingFiles, type PendingFiles } from './files'
 import { DevDrawer } from './Dev'
 import { AddAgentDialog, AgentsList, MODES, myAgents } from './agents'
@@ -166,6 +166,7 @@ function TopBar({ title, sub, openNav, children }: { title: string; sub?: string
         <h1>{title}</h1>
         {sub && <span class="topbar-sub">{sub}</span>}
       </div>
+      <RelayHealthBadge />
       <div class="topbar-actions">{children}</div>
     </header>
   )

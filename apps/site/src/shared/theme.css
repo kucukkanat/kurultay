@@ -27,6 +27,11 @@
   --r-1: 4px;
   --r-2: 10px;
   --r-3: 18px;
+  --r-pill: 999px;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
   color-scheme: light;
 }
 

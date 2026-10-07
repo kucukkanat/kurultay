@@ -373,6 +373,24 @@
   font-size: 13.5px;
   white-space: nowrap;
 }
+.relay-health {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-3);
+  border: 1px solid color-mix(in srgb, var(--madder) 45%, transparent);
+  border-radius: var(--r-pill);
+  background: var(--paper);
+  color: var(--madder);
+  font: 600 12px/1.2 var(--sans);
+  white-space: nowrap;
+}
+.relay-health-dot {
+  width: var(--s-2);
+  height: var(--s-2);
+  border-radius: var(--r-pill);
+  background: var(--madder);
+}
 .topbar-actions {
   display: flex;
   gap: 6px;
@@ -1260,6 +1278,13 @@
     padding: 10px 12px;
   }
   .topbar-sub {
+    display: none;
+  }
+  /* dot only, so the top bar does not wrap; the label lives in aria-label and title */
+  .relay-health {
+    padding: var(--s-2);
+  }
+  .relay-health-text {
     display: none;
   }
   .topbar-actions .btn.ghost {

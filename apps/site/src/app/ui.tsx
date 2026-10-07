@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
+import { relayHealthNow, useStore } from './store'
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ComponentChildren; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -132,5 +133,17 @@ export function Rich({ text, names }: { text: string; names: Set<string> }) {
         ),
       )}
     </>
+  )
+}
+
+/** Shown only when no relay answers. No button: the relay pool already reconnects by itself. */
+export function RelayHealthBadge() {
+  useStore()
+  if (relayHealthNow() !== 'down') return null
+  return (
+    <span class="relay-health" role="status" data-testid="relay-health" title="Kurultay keeps retrying by itself" aria-label="Offline, reconnecting">
+      <span class="relay-health-dot" aria-hidden="true" />
+      <span class="relay-health-text">Offline, reconnecting</span>
+    </span>
   )
 }
