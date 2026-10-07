@@ -30,7 +30,10 @@ export interface Control {
   close(): Promise<void>
 }
 
-/** The hosted app plus the app's dev (5173) and preview (4173) servers. KURULTAY_ORIGINS adds more. */
+/**
+ * The hosted app plus the app's dev (5173) and preview (4173) servers. KURULTAY_ORIGINS adds more. Browsers send only
+ * the origin, so every GitHub Pages project of the account passes too: a trust boundary docs/security.md spells out.
+ */
 export function defaultOrigins(): string[] {
   const extra = process.env.KURULTAY_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean) ?? []
   return [APP_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173', 'http://127.0.0.1:4173', ...extra]

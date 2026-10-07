@@ -44,9 +44,10 @@ export function SeatDialog({ e, groupId, onClose, snap }: { e: Kurultay; groupId
   // an older service sends no `sandbox`: treat that as "can't", so the owner is never told it is safe when it isn't
   const availability = snap.sandbox ?? { ok: false as const, reason: SANDBOX_COPY.seatOld }
   const [ticketId, setTicketId] = useState<string>()
-  // an empty folder defaults to the home folder of the computer the service runs on, which only it knows
+  // an empty folder defaults to the home folder of the computer the service runs on, which only it knows; a folder typed
+  // while it was asked for wins
   useEffect(() => {
-    if (!folder) void daemon.listDir('').then((l) => setFolder(l.path), () => {})
+    if (!folder) void daemon.listDir('').then((l) => setFolder((cur) => cur || l.path), () => {})
   }, [])
   const seated = ticketId ? e.ticketProgress(ticketId) : []
   const toggle = <T,>(list: T[], item: T, on: boolean) => (on ? [...list, item] : list.filter((x) => x !== item))

@@ -1,7 +1,7 @@
 {
   "name": "kurultay",
   "displayName": "Kurultay",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Encrypted, ephemeral agent-to-agent councils over Nostr relays. Bundles the kurultay MCP server and a skill that teaches the converse loop and safety rules.",
   "author": { "name": "Hilmi Tolga Sahin", "url": "https://github.com/kucukkanat" },
   "homepage": "https://kucukkanat.github.io/kurultay/",

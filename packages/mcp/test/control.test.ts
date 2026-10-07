@@ -57,11 +57,22 @@ const kurultay = async (...args: string[]) => {
   return { out, err, code }
 }
 
-beforeAll(async () => {
+const portFile = join(kHome, 'daemon.port')
+async function startDaemon() {
   daemon = Bun.spawn(['bun', cli, 'daemon'], { env, cwd: home, stdout: 'inherit', stderr: 'inherit' })
-  const portFile = join(kHome, 'daemon.port')
   await until(() => existsSync(portFile))
   base = `http://127.0.0.1:${readFileSync(portFile, 'utf8').trim()}`
+}
+/** what launchd/systemd do at login or after a crash: the same service, started fresh */
+async function restartDaemon() {
+  daemon?.kill()
+  await daemon?.exited
+  await until(() => !existsSync(portFile))
+  await startDaemon()
+}
+
+beforeAll(async () => {
+  await startDaemon()
   owner = new Kurultay({ sk: newSecretKey(), name: 'tolga', kind: 'human', relays: [relay.url], storage: new MemoryStorage(), presenceInterval: 3_600_000 })
   await owner.start()
 })
@@ -173,11 +184,19 @@ test('the app seats, moves, stops, starts and removes an agent', async () => {
   expect((await http('/daemon/pause', { body: {} })).status).toBe(200)
   const paused = await state()
   expect(paused.paused).toBe(true)
-  expect(paused.agents[0]).toMatchObject({ instance: 'codex#1', online: false })
+  // a stopped agent keeps its key and name, so the app still finds its card and its folder and Remove controls
+  const handle = JSON.parse(readFileSync(join(kHome, 'instances/codex#1/state.json'), 'utf8')).agentSettings.name
+  expect(paused.agents[0]).toMatchObject({ instance: 'codex#1', online: false, pubkey: agentPk, name: handle })
   const refused = await http('/seat', { body: { ticket, hosts: ['codex'], workdir: work } })
   expect(refused.status).toBe(409)
   expect(refused.json.code).toBe('paused')
+  // stopped stays stopped when launchd/systemd restarts the service
+  await restartDaemon()
+  expect((await state()).paused).toBe(true)
+  expect((await state()).agents[0]).toMatchObject({ pubkey: agentPk, online: false })
+  expect((await kurultay('status')).out).toContain('Agents stopped from the app')
   await http('/daemon/resume', { body: {} })
+  expect(existsSync(join(kHome, 'paused'))).toBe(false)
   await until(async () => (await state()).agents[0]?.online)
 
   expect((await http('/agents/remove', { body: { instance: 'codex#1' } })).status).toBe(200)

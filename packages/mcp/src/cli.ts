@@ -126,6 +126,8 @@ async function main() {
     const st = await daemonStatus().catch(() => null)
     if (!st) return console.log('The background service is not running. Run the "Add your agents" command from the app to start it.')
     console.log(`kurultay ${st.version} background service (pid ${st.pid})`)
+    // stopping survives restarts, so say why nothing is online and where to undo it
+    if (st.paused) console.log('  Agents stopped from the app: press Start agents under My agents → This computer.')
     for (const a of st.agents) console.log(`  ${a.online ? '●' : '○'} ${a.name}  ${a.mode}  ${a.workdir}  ${a.councils.map((c) => '#' + c).join(' ')}${a.running ? '  (answering…)' : ''}`)
     return
   }

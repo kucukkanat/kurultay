@@ -43,7 +43,7 @@ export async function daemonAgents(): Promise<string[] | null> {
 }
 
 export function daemonStatus() {
-  return call<{ pid: number; version: string; agents: { instance: string; name: string; mode: string; workdir: string; host: string; online: boolean; running: boolean; lastRun?: string; councils: string[] }[] }>('GET', '/agents', undefined, 1500)
+  return call<{ pid: number; version: string; paused?: boolean; agents: { instance: string; name: string; mode: string; workdir: string; host: string; online: boolean; running: boolean; lastRun?: string; councils: string[] }[] }>('GET', '/agents', undefined, 1500)
 }
 
 export function daemonCall(instance: string, tool: string, args: unknown) {

@@ -284,6 +284,17 @@ function runCommand(cmd: string, args: string[], cwd: string, env: Record<string
 }
 
 const portFile = () => join(configRoot(), 'daemon.port')
+const pausedFile = () => join(configRoot(), 'paused')
+
+/**
+ * A stopped agent as the app lists it. Its engine is down, so the key and the name its owner gave it come from its saved
+ * state (`pk` is written there for exactly this kind of check): the app finds its card by pubkey, and without one the
+ * folder and Remove controls would vanish until the agents start again. No keychain read, since the app polls this.
+ */
+export function pausedAgentInfo(instance: string, e: RegistryEntry, dir = join(configRoot(), 'instances', instance)): DaemonAgentInfo {
+  const saved = new FileStorage(join(dir, 'state.json')).load()
+  return { instance, pubkey: saved?.pk ?? '', name: saved?.agentSettings?.name ?? displayName(instance), host: e.host, workdir: e.workdir, mode: 'off', online: false, running: false, councils: [], groupIds: [], sandbox: e.sandbox && { ...e.sandbox, lastViolations: [] } }
+}
 const isHost = (h: string): h is Host => (HOSTS as readonly string[]).includes(h) && h !== 'vscode'
 
 export async function runDaemon() {
@@ -291,8 +302,9 @@ export async function runDaemon() {
   const agents = new Map<string, BackgroundAgent>()
   const relaysEnv = process.env.KURULTAY_RELAYS?.split(',').map((s) => s.trim()).filter(Boolean)
   const pairing = createPairing(join(configRoot(), 'pairings.json'))
-  // stopped from the app: engines are down but the control server stays up, so the app can start them again
-  let paused = false
+  // stopped from the app: engines are down but the control server stays up, so the app can start them again. Kept in a
+  // file so a launchd/systemd restart (login, crash, update) does not bring back agents the owner stopped
+  let paused = existsSync(pausedFile())
   // snapshot() is synchronous: the machine check is cached here and refreshed whenever the agents load
   let availability: SandboxAvailability = { ok: false, reason: 'not checked yet' }
 
@@ -334,7 +346,7 @@ export async function runDaemon() {
 
   const agentInfo = (): DaemonAgentInfo[] => {
     // stopped: the engines are gone but the seats are still registered, so the app can list them
-    if (paused) return Object.entries(readRegistry()).map(([instance, e]) => ({ instance, pubkey: '', name: displayName(instance), host: e.host, workdir: e.workdir, mode: 'off', online: false, running: false, councils: [], groupIds: [], sandbox: e.sandbox && { ...e.sandbox, lastViolations: [] } }))
+    if (paused) return Object.entries(readRegistry()).map(([instance, e]) => pausedAgentInfo(instance, e))
     return [...agents.values()].map((a) => ({
       instance: a.instance,
       pubkey: a.engine.pubkey,
@@ -437,11 +449,13 @@ export async function runDaemon() {
     },
     async pause() {
       paused = true
+      writeFileSync(pausedFile(), '', { mode: 0o600 })
       for (const instance of [...agents.keys()]) await stopAgent(instance, 'stopped from the app')
       log('agents stopped from the app')
     },
     async resume() {
       paused = false
+      rmSync(pausedFile(), { force: true })
       await load()
       log('agents started from the app')
     },
@@ -462,7 +476,7 @@ export async function runDaemon() {
   }
 
   const srv = serveIpc({
-    agents: () => ({ pid: process.pid, version: VERSION, agents: agentInfo() }),
+    agents: () => ({ pid: process.pid, version: VERSION, paused, agents: agentInfo() }),
     get(path) {
       if (path === '/pair/pending') return { pending: pairing.list(), paired: pairing.pairedCount() }
       throw new Error('unknown')
