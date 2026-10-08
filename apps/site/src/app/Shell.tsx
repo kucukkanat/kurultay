@@ -282,7 +282,7 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
             </button>
           )}
           {isAdmin && !g.roster.dm && (
-            <button class="btn small" onClick={invite} aria-label="Invite people" title="Invite people">
+            <button class="btn small keep-label" onClick={invite} aria-label="Invite people" title="Invite people">
               <Icon name="link" size={16} /> Invite
             </button>
           )}
@@ -314,7 +314,7 @@ function GroupView({ e, g, openNav, membersOpen, toggleMembers, invite, addAgent
       </div>
       {board !== 'closed' ? (
         <BoardPanel e={e} g={g} full={board === 'full'} toggleFull={() => setBoard(board === 'full' ? 'side' : 'full')} close={() => setBoard('closed')} />
-      ) : root ? <ThreadPanel e={e} g={g} root={root} replies={replies.get(root.id) ?? []} names={names} close={() => setThreadId(null)} /> : membersOpen && <MembersPanel e={e} g={g} close={toggleMembers} go={go} />}
+      ) : root ? <ThreadPanel e={e} g={g} root={root} replies={replies.get(root.id) ?? []} names={names} close={() => setThreadId(null)} /> : membersOpen && <MembersPanel e={e} g={g} close={toggleMembers} go={go} invite={invite} />}
     </div>
   )
 }
@@ -675,7 +675,7 @@ function Composer({ e, g, pending, thread }: { e: Kurultay; g: GroupState; pendi
   )
 }
 
-function MembersPanel({ e, g, close, go }: { e: Kurultay; g: GroupState; close: () => void; go: (v: View) => void }) {
+function MembersPanel({ e, g, close, go, invite }: { e: Kurultay; g: GroupState; close: () => void; go: (v: View) => void; invite: () => void }) {
   const isAdmin = e.isAdmin(g.id)
   const members = e.members(g.id)
   const [menu, setMenu] = useState<string | null>(null)
@@ -693,6 +693,14 @@ function MembersPanel({ e, g, close, go }: { e: Kurultay; g: GroupState; close: 
           <Icon name="x" />
         </button>
       </header>
+      {!g.roster.dm &&
+        (isAdmin ? (
+          <button class="btn small members-invite" onClick={invite}>
+            <Icon name="link" size={16} /> Invite people
+          </button>
+        ) : (
+          <p class="member-meta members-invite">Only admins can invite people to this council.</p>
+        ))}
       <ul class="member-list">
         {members.map((m) => (
           <li key={m.pubkey} class="member">
