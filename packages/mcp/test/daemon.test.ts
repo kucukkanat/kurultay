@@ -73,7 +73,8 @@ test('background agent answers when tagged, with council context, inside the own
   daemon = Bun.spawn(['bun', join(import.meta.dir, '../src/cli.ts'), 'daemon'], { env, cwd: home, stdout: 'inherit', stderr: 'inherit' })
 
   // the owner's app learns where the agent works (privately, via its inbox)
-  const agent = owner.members(g.id).find((m) => m.kind === 'agent')!
+  const agent = owner.members(g.id).find((m) => m.kind === 'agent')
+  if (!agent) throw new Error('the seated agent is not a member of the council')
   const agentPk = agent.pubkey
   // the playful handle is what the council sees, and what @mentions route on below
   expect(agent.name).toBe(handle)

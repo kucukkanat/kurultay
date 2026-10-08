@@ -5,7 +5,7 @@ import type { AgentMode } from './types'
  * This API never touches Nostr, so it is outside the protocol spec.
  */
 
-/** Not Fika's 47615, so both can run on one machine. */
+/** Not 47615, which an older fork's daemon uses, so both can run on one machine. */
 export const DAEMON_PORT = 47616
 /** The hosted web app; the daemon also accepts the local dev (5173) and preview (4173) servers. */
 export const APP_ORIGIN = 'https://kucukkanat.github.io'

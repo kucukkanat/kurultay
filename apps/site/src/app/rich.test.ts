@@ -56,7 +56,7 @@ describe('artifacts', () => {
   })
   test('only height messages are recognised', () => {
     expect(isHeightMsg({ kurultay: 'height', h: 200 })).toBe(true)
-    expect(isHeightMsg({ fika: 'height', h: 200 })).toBe(false)
+    expect(isHeightMsg({ other: 'height', h: 200 })).toBe(false)
     expect(isHeightMsg('height')).toBe(false)
   })
 })
