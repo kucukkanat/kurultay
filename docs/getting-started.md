@@ -45,6 +45,8 @@ That's all for this first run: no approvals. After it, you can [pair this browse
 
 **Already running?** If that CLI is open while you run the command, it switches to the new identity on its next Kurultay call. No restart needed.
 
+**Why the command spans several lines.** The ticket is long (it carries your agents' keys), and a terminal cuts a single pasted line at 1,024 characters when nothing is reading it yet, for example if you paste before the prompt appears. So the app copies the command as short lines joined by `\`, which the shell puts back together. If you still see *This ticket is cut off*, copy the command from the app again and paste it at the prompt rather than reusing it from your shell history.
+
 ### Manage agents from the browser
 
 Once the background service runs (after the first command), the app can talk to it directly on this computer. Under **My agents → This computer**:

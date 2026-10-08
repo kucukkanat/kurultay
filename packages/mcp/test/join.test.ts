@@ -77,6 +77,19 @@ test('kurultay join: one command configures hosts and seats the agents', async (
   expect([seatedName(home, 'codex'), seatedName(home, 'opencode')]).toEqual([codexName, opencodeName])
 }, 40000)
 
+test('a ticket cut off by the terminal fails with a message that says what happened', async () => {
+  freshHome('kurultay-join-cut-')
+  const errors: string[] = []
+  const orig = console.error
+  console.error = (...a: unknown[]) => void errors.push(a.join(' '))
+  try {
+    expect((await quiet([owner.createTicket([]).slice(0, 907)])).code).toBe(1)
+  } finally {
+    console.error = orig
+  }
+  expect(errors.join('\n')).toContain('This ticket is cut off')
+})
+
 test('an agent seated before playful names keeps its host@machine name', async () => {
   const home = freshHome('kurultay-legacy-')
   const g = owner.createGroup('legacy-council')

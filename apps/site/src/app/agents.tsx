@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks'
-import { decodeTicket, shortKey, type AgentMode, type DaemonAgentInfo, type Kurultay } from '@kurultay/core'
+import { decodeTicket, shortKey, wrapCommand, type AgentMode, type DaemonAgentInfo, type Kurultay } from '@kurultay/core'
 import { AgentProfileEditor } from './AgentProfile'
 import { daemon, useDaemon } from './daemon-client'
 import { act, Connection, FolderPicker, NPX } from './DaemonPanel'
@@ -47,7 +47,7 @@ function CommandDialog({ e, groupId, onClose }: { e: Kurultay; groupId?: string;
   // same agent identities every time (one seed per person); the ticket only changes what gets set up and where
   const { command, ticketId } = useMemo(() => {
     const t = e.createTicket(picked, { hosts })
-    return { command: JOIN_PREFIX + t, ticketId: decodeTicket(t).id }
+    return { command: wrapCommand(JOIN_PREFIX + t), ticketId: decodeTicket(t).id }
   }, [picked.join(), hosts.join()])
   const toggleHost = (id: string) => {
     const next = hosts.includes(id) ? hosts.filter((h) => h !== id) : [...hosts, id]
