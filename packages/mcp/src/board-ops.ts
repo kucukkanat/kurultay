@@ -26,8 +26,9 @@ export const patchShape = {
   backgroundColor: colorField,
 }
 
-/** One ```board block: things to draw, edits to elements already there, and ids to remove. */
+/** One ```board block: which council's board, things to draw, edits to elements already there, and ids to remove. */
 export const boardOps = z.object({
+  council: z.string().min(1).max(200).optional(),
   draw: z.array(drawItem).max(60).optional(),
   edit: z.array(z.object({ ids: z.array(z.string()).min(1).max(60), ...patchShape })).max(30).optional(),
   delete: z.array(z.string()).max(200).optional(),
@@ -36,7 +37,7 @@ export type BoardOps = z.infer<typeof boardOps>
 
 /** What a background turn is told about the board block; tools.ts and SKILL.md say the same for open sessions. */
 export const BOARD_BLOCK_RULE =
-  'The council has a shared drawing board (its contents are listed above, per council). When asked to put something on the board, sketch, map or lay something out there, add a fenced ```board block to your reply with JSON: {"draw": [...], "edit": [...], "delete": [...]}. draw items: {"kind":"rectangle"|"ellipse"|"diamond","x":0,"y":0,"label":"text inside"} (width/height optional), {"kind":"text","x":0,"y":0,"text":"..."}, {"kind":"arrow","from":"#0","to":"#1","label":"optional"} where from/to is an id from the board list, "#n" for the n-th draw item of the same block, or {"x":..,"y":..}. edit items: {"ids":["id"],"text":"new words"} or x, y, width, height, strokeColor, backgroundColor (hex). delete: ["id", ...]. Coordinates are pixels; leave about 60 px between shapes (about 220 px when a labelled arrow joins them) and place new things beside what is already there. The block is drawn for the council and removed from your message; say in your words what you drew.'
+  'The council has a shared drawing board (its contents are listed above, per council). When asked to put something on the board, sketch, map or lay something out there, add a fenced ```board block to your reply with JSON: {"draw": [...], "edit": [...], "delete": [...]}. Add "council":"name" to the block when you answer more than one council; without it the block goes to the council of the newest message. draw items: {"kind":"rectangle"|"ellipse"|"diamond","x":0,"y":0,"label":"text inside"} (width/height optional), {"kind":"text","x":0,"y":0,"text":"..."}, {"kind":"arrow","from":"#0","to":"#1","label":"optional"} where from/to is an id from the board list, "#n" for the n-th draw item of the same block, or {"x":..,"y":..}. edit items: {"ids":["id"],"text":"new words"} or x, y, width, height, strokeColor, backgroundColor (hex). delete: ["id", ...]. Coordinates are pixels; leave about 60 px between shapes (about 220 px when a labelled arrow joins them) and place new things beside what is already there. The block is drawn for the council and removed from your message; say in your words what you drew.'
 
 const BLOCK = /```board[^\S\n]*\n([\s\S]*?)\n```[^\S\n]*(?:\n|$)/g
 
@@ -86,6 +87,25 @@ export async function applyBoardOps(e: Kurultay, groupId: string, all: readonly 
   }
   const did = count.drew + count.edited + count.removed ? `_(On the board: drew ${count.drew}, edited ${count.edited}, removed ${count.removed}.)_` : ''
   return [did, problems.length ? `(Board: ${problems.join('; ')}.)` : ''].filter(Boolean).join(' ')
+}
+
+/**
+ * Applies a turn's board blocks, each to one council only: the one it names (`council`, by name or id), else the
+ * council of the newest message. A drawing asked for in one council must never land on another's board, and each
+ * council hears only about its own: the result is the notes to post, by group.
+ */
+export async function applyBoardBlocks(e: Kurultay, blocks: readonly BoardOps[], groupIds: readonly string[], newest: string): Promise<Map<string, string[]>> {
+  const notes = new Map<string, string[]>()
+  const note = (gid: string, text: string) => text && notes.set(gid, [...(notes.get(gid) ?? []), text])
+  const byGroup = new Map<string, BoardOps[]>()
+  for (const ops of blocks) {
+    const named = ops.council?.replace(/^#/, '')
+    const gid = named === undefined ? newest : groupIds.find((id) => id === named || e.state.groups[id]?.roster.name === named)
+    if (gid) byGroup.set(gid, [...(byGroup.get(gid) ?? []), ops])
+    else note(newest, `(Board: “${ops.council}” is not a council in this conversation, so nothing was drawn.)`)
+  }
+  for (const [gid, ops] of byGroup) note(gid, await applyBoardOps(e, gid, ops))
+  return notes
 }
 
 /** Groups this engine already asked for the board: after one ask it is subscribed, so every later change reaches it live. */

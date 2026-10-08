@@ -16,7 +16,7 @@ import {
 import { decodeLink, encodeInvite, encodePair, encodeTicket } from './links'
 import { cleanFileRefs, DEFAULT_BLOSSOM, deleteBlob, downloadFile, encryptFile, FILE_TTL, MAX_FILES_PER_MESSAGE, normalizeServer, safeFileName, uploadBlob, type FileRef } from './files'
 import { RelayPool, type Frame, type RelayInfo } from './relay'
-import { chunkElements, mergeElements, type BoardElement } from './board'
+import { chunkElements, MAX_BOARD_ELEMENTS, mergeElements, type BoardElement } from './board'
 import {
   DEFAULT_RELAYS,
   MAX_TEXT_BYTES,
@@ -49,8 +49,20 @@ import { Emitter, now, randomHex, utf8 } from './util'
 
 export interface Storage {
   load(): Promise<State | null> | State | null
+  /** May throw (or reject): the engine reports it as a notice instead of losing state silently. */
   save(state: State): Promise<void> | void
+  /**
+   * Optional: keep each council's board apart from the state. A busy board can be far larger than everything else, and
+   * where space is scarce (localStorage) it must never stop keys and councils from being saved. With these, `save` gets
+   * the state without boards; without them boards stay in the state (a file on disk has room).
+   */
+  loadBoard?(groupId: string): Promise<Record<string, BoardElement> | null> | Record<string, BoardElement> | null
+  /** `null` forgets the board (the council was left). */
+  saveBoard?(groupId: string, board: Record<string, BoardElement> | null): Promise<void> | void
 }
+
+/** The state without its boards, for a storage that keeps them apart. */
+const withoutBoards = (state: State): State => ({ ...state, groups: Object.fromEntries(Object.entries(state.groups).map(([id, { board: _board, ...g }]) => [id, g])) })
 
 export class MemoryStorage implements Storage {
   state: State | null = null
@@ -162,9 +174,19 @@ type EngineEvents = {
 }
 
 const ONLINE_WINDOW = 150
-/** Board envelopes per minute, apart from chat's limit: a drag sends a few a second, and a whole board goes out in chunks. */
+/** Drawing envelopes per minute, apart from chat's limit: a drag sends a few a second. */
 export const BOARD_SEND_PER_MINUTE = 300
-export const BOARD_RECV_PER_MINUTE = 600
+/** Whole-board answers to board_req, in chunks, per minute: their own budget, so answering never stops me drawing. */
+export const BOARD_ANSWER_PER_MINUTE = 300
+/** Pointer envelopes per minute: their own budget, so moving the mouse never stops drawing from syncing. */
+export const BOARD_POINTER_PER_MINUTE = 240
+/** What a receiver takes from one sender per minute: drawings plus answers, and (apart) pointers with room to spare. */
+export const BOARD_RECV_PER_MINUTE = BOARD_SEND_PER_MINUTE + BOARD_ANSWER_PER_MINUTE
+const POINTER_RECV_PER_MINUTE = 2 * BOARD_POINTER_PER_MINUTE
+/** One member's board_req is answered at most this often; more are ignored (a flood must not make everyone resend). */
+export const BOARD_REQ_EVERY_MS = 60_000
+/** I send a whole board at most this often per council; a request in between is answered when the wait is over. */
+export const BOARD_ANSWER_EVERY_MS = 15_000
 const HISTORY_LIMIT = 500
 
 export function emptyState(): State {
@@ -182,6 +204,16 @@ export function emptyState(): State {
 }
 
 export class KurultayError extends Error {}
+
+/** Some elements were not put on the board (malformed, too large, or the board is full); the rest were sent. */
+export class BoardRefusedError extends KurultayError {
+  constructor(
+    readonly refused: number,
+    readonly sent: readonly BoardElement[],
+  ) {
+    super(`${refused} element${refused === 1 ? ' was' : 's were'} not put on the board: too large, malformed, or the board already shows ${MAX_BOARD_ELEMENTS} elements`)
+  }
+}
 
 /** Peers' cards are untrusted: a picture that is not a small raster data URL (javascript:, tracking https:, SVG) is dropped. */
 const safeCard = (card: Card): Card => ({ ...card, avatar: cleanAvatar(card.avatar) })
@@ -215,7 +247,18 @@ export class Kurultay extends Emitter<EngineEvents> {
   private settingsResent = new Map<string, string>()
   private recvLog = new Map<string, number[]>()
   private boardSendLog = new Map<string, number[]>()
+  private boardAnswerLog = new Map<string, number[]>()
+  private pointerSendLog = new Map<string, number[]>()
   private boardRecvLog = new Map<string, number[]>()
+  private pointerRecvLog = new Map<string, number[]>()
+  /** when each member's last board_req was taken, by group + member */
+  private boardReqAt = new Map<string, number>()
+  /** when a whole board last went out in each council, from me or anyone */
+  private fullBoardAt = new Map<string, number>()
+  /** boards changed since the last save, for a storage that keeps them apart */
+  private dirtyBoards = new Set<string>()
+  /** what is failing to save ('state' or a group id), so a failure is reported once, not on every save */
+  private saveFailing = new Set<string>()
   /** answers to a board_req I am waiting to send, by group; cancelled when someone else answers first */
   private boardReplies = new Map<string, ReturnType<typeof setTimeout>>()
   private lastPresence = 0
@@ -266,6 +309,13 @@ export class Kurultay extends Emitter<EngineEvents> {
     this.started = true
     const loaded = await this.storage.load()
     if (loaded && loaded.v === 1) this.state = { ...emptyState(), ...loaded }
+    if (this.storage.loadBoard)
+      for (const g of Object.values(this.state.groups)) {
+        const board = await this.storage.loadBoard(g.id)
+        // a board still inside the state (saved before boards were kept apart) moves out on the next save
+        if (board) g.board = board
+        else if (g.board) this.dirtyBoards.add(g.id)
+      }
     this.state.pk = this.pubkey
     // an agent keeps the name its owner gave it
     if (this.state.agentSettings?.name) {
@@ -380,7 +430,29 @@ export class Kurultay extends Emitter<EngineEvents> {
   flush() {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = undefined
-    void this.storage.save(this.state)
+    const { saveBoard } = this.storage
+    if (!saveBoard) return this.write('state', () => this.storage.save(this.state))
+    this.write('state', () => this.storage.save(withoutBoards(this.state)))
+    for (const id of this.dirtyBoards) this.write(id, () => saveBoard.call(this.storage, id, this.state.groups[id]?.board ?? null))
+    this.dirtyBoards.clear()
+  }
+
+  /** Runs one save and says so, once, when it fails: losing new group keys silently would lose councils on reload. */
+  private write(what: string, save: () => Promise<void> | void) {
+    const fail = (err: unknown) => {
+      if (this.saveFailing.has(what)) return
+      this.saveFailing.add(what)
+      const why = err instanceof Error ? err.message : String(err)
+      const group = this.state.groups[what]
+      this.emit('notice', group
+        ? { level: 'warn', text: `The board of “${group.roster.name}” is not kept on this device (${why}). The council sends it again when you open it.`, groupId: what }
+        : { level: 'error', text: `Could not save on this device (${why}). Changes since then are lost when you reload.` })
+    }
+    try {
+      void Promise.resolve(save()).then(() => this.saveFailing.delete(what), fail)
+    } catch (err) {
+      fail(err)
+    }
   }
 
   private changed(reason: string) {
@@ -537,22 +609,14 @@ export class Kurultay extends Emitter<EngineEvents> {
   private onBoard(g: GroupState, from: string, kind: PeerKind, env: Extract<Envelope, { type: 'board' | 'board_req' | 'board_ptr' }>) {
     const mine = from === this.pubkey
     if (!mine && (g.roster.muted.includes(from) || (g.roster.paused && kind === 'agent'))) return
-    if (!mine && !this.rateOk(this.boardRecvLog, g.id + from, BOARD_RECV_PER_MINUTE)) return
     if (env.type === 'board_ptr') {
-      if (!mine && Number.isFinite(env.x) && Number.isFinite(env.y)) this.emit('pointer', { groupId: g.id, from, x: env.x, y: env.y })
+      if (!mine && this.rateOk(this.pointerRecvLog, g.id + from, POINTER_RECV_PER_MINUTE) && Number.isFinite(env.x) && Number.isFinite(env.y)) this.emit('pointer', { groupId: g.id, from, x: env.x, y: env.y })
       return
     }
-    if (env.type === 'board_req') {
-      if (mine || !Object.keys(g.board ?? {}).length || this.boardReplies.has(g.id)) return
-      // everyone who has the board would answer at once: a random wait lets the first answer cancel the rest
-      const reply = setTimeout(() => {
-        this.boardReplies.delete(g.id)
-        void this.sendBoard(g.id, Object.values(this.state.groups[g.id]?.board ?? {}), true).catch(() => {})
-      }, 300 + Math.random() * 1500)
-      this.boardReplies.set(g.id, reply)
-      return
-    }
+    if (!mine && !this.rateOk(this.boardRecvLog, g.id + from, BOARD_RECV_PER_MINUTE)) return
+    if (env.type === 'board_req') return this.answerBoardReq(g, from)
     if (!Array.isArray(env.els)) return
+    if (env.full) this.fullBoardAt.set(g.id, Date.now())
     if (env.full && !mine) {
       clearTimeout(this.boardReplies.get(g.id))
       this.boardReplies.delete(g.id)
@@ -560,14 +624,36 @@ export class Kurultay extends Emitter<EngineEvents> {
     const { next, changed } = mergeElements(g.board ?? {}, env.els)
     if (!changed.length) return
     g.board = next
+    this.dirtyBoards.add(g.id)
     // persisted, but not a 'change': a stroke must not re-render the whole app
     this.persist()
     this.emit('board', { groupId: g.id, from, elements: changed, full: !!env.full })
   }
 
+  /**
+   * Schedules my whole board for a member who asked. A whole board is the costliest thing on the board channel, so a
+   * member is answered once a minute at most, a council gets a whole board from me once per BOARD_ANSWER_EVERY_MS, and
+   * everyone who has it waits a random moment so the first answer (which reaches all) cancels the rest.
+   */
+  private answerBoardReq(g: GroupState, from: string) {
+    const t = Date.now()
+    const key = g.id + from
+    if (from === this.pubkey || !Object.keys(g.board ?? {}).length || t - (this.boardReqAt.get(key) ?? -Infinity) < BOARD_REQ_EVERY_MS) return
+    this.boardReqAt.set(key, t)
+    if (this.boardReplies.has(g.id)) return
+    const quiet = Math.max(0, (this.fullBoardAt.get(g.id) ?? -Infinity) + BOARD_ANSWER_EVERY_MS - t)
+    const reply = setTimeout(() => {
+      this.boardReplies.delete(g.id)
+      this.fullBoardAt.set(g.id, Date.now())
+      void this.sendBoard(g.id, Object.values(this.state.groups[g.id]?.board ?? {}), true).catch(() => {})
+    }, quiet + 300 + Math.random() * 1500)
+    this.boardReplies.set(g.id, reply)
+  }
+
   private async sendBoard(groupId: string, els: readonly BoardElement[], full = false) {
+    const [log, limit] = full ? [this.boardAnswerLog, BOARD_ANSWER_PER_MINUTE] : [this.boardSendLog, BOARD_SEND_PER_MINUTE]
     for (const chunk of chunkElements(els)) {
-      if (!this.rateOk(this.boardSendLog, groupId, BOARD_SEND_PER_MINUTE)) throw new KurultayError(`Board rate limit: at most ${BOARD_SEND_PER_MINUTE} updates per minute. Wait a moment.`)
+      if (!this.rateOk(log, groupId, limit)) throw new KurultayError(`Board rate limit: at most ${limit} updates per minute. Wait a moment.`)
       await this.sendGroup(groupId, { type: 'board', els: chunk, ...(full ? { full: true } : {}) })
     }
   }
@@ -588,12 +674,14 @@ export class Kurultay extends Emitter<EngineEvents> {
   /**
    * Puts elements on the board and sends the ones that changed it to the council, encrypted with the group key like any
    * message. The app passes what Excalidraw changed, agents pass what board.ts builds. Returns the elements that changed
-   * the board (one no newer than mine changes nothing and is not sent).
+   * the board (one no newer than mine changes nothing and is not sent). Throws BoardRefusedError, after sending the rest,
+   * when some could not go on the board, so a drawing is never lost without a word.
    */
   async drawBoard(groupId: string, els: readonly unknown[]): Promise<BoardElement[]> {
     const g = this.guardBoard(groupId)
-    const { changed } = mergeElements(g.board ?? {}, els)
+    const { changed, refused } = mergeElements(g.board ?? {}, els)
     if (changed.length) await this.sendBoard(groupId, changed)
+    if (refused) throw new BoardRefusedError(refused, changed)
     return changed
   }
 
@@ -603,10 +691,10 @@ export class Kurultay extends Emitter<EngineEvents> {
     await this.sendGroup(groupId, { type: 'board_req' })
   }
 
-  /** Shows the others where my pointer is on the board. Callers throttle; over the board rate it is silently skipped. */
+  /** Shows the others where my pointer is on the board. Callers throttle; over the pointer rate it is silently skipped. */
   async boardPointer(groupId: string, x: number, y: number) {
     this.guardBoard(groupId)
-    if (!this.rateOk(this.boardSendLog, groupId, BOARD_SEND_PER_MINUTE)) return
+    if (!this.rateOk(this.pointerSendLog, groupId, BOARD_POINTER_PER_MINUTE)) return
     await this.sendGroup(groupId, { type: 'board_ptr', x: Math.round(x), y: Math.round(y) })
   }
 
@@ -882,6 +970,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     const g = this.state.groups[groupId]
     if (!g) return
     delete this.state.groups[groupId]
+    this.dirtyBoards.add(groupId)
     this.emit('notice', { level: 'warn', text: `${why}: “${g.roster.name}”`, groupId })
     this.resubscribe()
     this.changed('removed')
@@ -1234,6 +1323,7 @@ export class Kurultay extends Emitter<EngineEvents> {
     if (!g) return
     if (Object.keys(g.roster.members).length > 1) await this.sendGroup(groupId, { type: 'leave' }).catch(() => {})
     delete this.state.groups[groupId]
+    this.dirtyBoards.add(groupId)
     this.resubscribe()
     this.changed('left')
   }

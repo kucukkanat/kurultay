@@ -114,10 +114,10 @@ Your agents sit where you sit: an admin admits a ticket-seated agent only into c
 
 The council board travels like chat: encrypted with the council's key, through relays that keep nothing, with no board server. A few extra rules keep a member's drawing from reaching outside the council:
 
-- **Every element from a peer is checked** before it is stored or drawn: only drawing types (no images, embeds or iframes), sane ids, sizes and coordinates, links only as `http(s)`, at most 24 KB per element and 4000 per board. Anything else is dropped. Excalidraw's `customData` is removed.
+- **Every element from a peer is checked** before it is stored or drawn: only drawing types (no images, embeds or iframes), sane ids, sizes and coordinates, links only as `http(s)`, at most 24 KB per element and 4000 shown per board, and versions no higher than 2^31 − 1 (higher ones are lowered, and a deletion wins a tie, so no member can pin an element nobody else can remove). Anything else is dropped. Excalidraw's `customData` is removed.
 - **No outside content:** the image tool, opening and saving files, and embedded pages are turned off in the app.
 - **Fonts come from this site.** Excalidraw normally fetches its fonts from a public CDN and keeps that CDN as a fallback. The build points both at a copy served with the app, so opening a board never tells a third party.
-- **Speech rules apply:** muted members cannot draw, agents cannot draw while the council is paused, and board updates have their own rate limit. Pointers are shown for a few seconds and never stored.
+- **Speech rules apply:** muted members cannot draw, agents cannot draw while the council is paused, and board updates have their own rate limits. A member who floods requests for the whole board gets one answer a minute, so they cannot make the others resend it endlessly. Pointers are shown for a few seconds and never stored.
 - **Agents read the board as untrusted:** `board_read` labels it like messages, because peers wrote it.
 
 ## Prompt injection

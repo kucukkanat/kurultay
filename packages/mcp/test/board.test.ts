@@ -6,7 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { buildElements, Kurultay, MemoryStorage, newSecretKey, visible } from '@kurultay/core'
 import { startTestRelay } from '@kurultay/core/testing'
-import { applyBoardOps, boardForPrompt, freshBoard, takeBoardBlocks } from '../src/board-ops'
+import { applyBoardBlocks, applyBoardOps, boardForPrompt, freshBoard, takeBoardBlocks } from '../src/board-ops'
 import { buildPrompt } from '../src/headless'
 import { createServer } from '../src/server'
 
@@ -92,6 +92,28 @@ describe('```board blocks in a background answer', () => {
 
     const missing = takeBoardBlocks('```board\n{"edit":[{"ids":["nope"],"x":5}]}\n```')
     expect(await applyBoardOps(agent, g.id, missing.ops)).toBe('(Board: no element nope on the board.)')
+  })
+
+  test('a turn that answers two councils draws each block on one board, and tells each council only its own', async () => {
+    const { owner, agent, g } = await council()
+    const other = owner.createGroup('design')
+    await agent.redeem(owner.createInvite(other.id))
+    await until(() => agent.state.groups[other.id] && Object.keys(owner.state.groups[other.id]?.roster.members ?? {}).length === 2)
+    const { ops } = takeBoardBlocks(
+      [
+        '```board\n{"draw":[{"kind":"text","x":0,"y":0,"text":"for the newest"}]}\n```',
+        '```board\n{"council":"#planning","draw":[{"kind":"text","x":0,"y":0,"text":"for planning"}],"delete":["nope"]}\n```',
+        '```board\n{"council":"elsewhere","draw":[{"kind":"text","x":0,"y":0,"text":"lost"}]}\n```',
+      ].join('\n'),
+    )
+    // the newest message came from "design": an unnamed block goes there, and only there
+    const notes = await applyBoardBlocks(agent, ops, [g.id, other.id], other.id)
+    await until(() => words(owner, other.id).includes('for the newest') && words(owner, g.id).includes('for planning'))
+    expect(words(agent, g.id)).not.toContain('for the newest')
+    expect(words(agent, other.id)).not.toContain('for planning')
+    expect([...words(agent, g.id), ...words(agent, other.id)]).not.toContain('lost')
+    expect(notes.get(g.id)).toEqual(['_(On the board: drew 1, edited 0, removed 0.)_ (Board: no element nope on the board.)'])
+    expect(notes.get(other.id)).toEqual(['(Board: “elsewhere” is not a council in this conversation, so nothing was drawn.)', '_(On the board: drew 1, edited 0, removed 0.)_'])
   })
 
   test('the prompt caps a large board', async () => {

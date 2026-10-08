@@ -1,12 +1,69 @@
 // Between Excalidraw and the council, without a DOM: which local elements to send, how remote ones join the scene, and
 // how pointers from the council become cursors. The React island (excalidraw.ts) only wires these up.
-import { newer, type Versioned } from '@kurultay/core'
+import { BoardRefusedError, newer, type Versioned } from '@kurultay/core'
 
-/** Elements whose version I have not sent (or received) yet, i.e. what a local edit changed. Marks them as sent. */
-export function takeUnsent<T extends Versioned>(sent: Map<string, number>, scene: readonly T[]): T[] {
-  const out = scene.filter((e) => sent.get(e.id) !== e.version)
-  for (const e of out) sent.set(e.id, e.version)
-  return out
+/** Elements whose version the council does not have from me yet (nor sent me), i.e. what a local edit changed. */
+export const unsent = <T extends Versioned>(sent: ReadonlyMap<string, number>, scene: readonly T[]): T[] => scene.filter((e) => sent.get(e.id) !== e.version)
+
+export interface BoardSender {
+  /** Sends what changed locally; call on every scene change (throttled). */
+  flush(): void
+  cancel(): void
+}
+
+/**
+ * Local edits to the council, one send at a time. A version counts as sent only once `draw` took it, so a send that
+ * fails (rate limit, muted, paused, relay down) is tried again after `retryMs`, then twice as long each time it fails
+ * again (up to a minute, so a long mute does not report every few seconds), instead of leaving peers out of sync.
+ * Elements the board refused are marked too: sending them again would be refused again, and `onError` has said so.
+ */
+export function boardSender<T extends Versioned>(o: { sent: Map<string, number>; scene: () => readonly T[]; draw: (els: T[]) => Promise<unknown>; onError: (err: unknown) => void; retryMs: number }): BoardSender {
+  let busy = false
+  let again = false
+  let retry: ReturnType<typeof setTimeout> | undefined
+  let delay = o.retryMs
+  const flush = () => {
+    // one send in flight, and no attempt while waiting to retry: edits meanwhile go out with the next one
+    if (busy || retry) {
+      again ||= busy
+      return
+    }
+    const out = unsent(o.sent, o.scene())
+    if (!out.length) return
+    busy = true
+    o.draw(out)
+      .then(
+        () => {
+          markKnown(o.sent, out)
+          delay = o.retryMs
+        },
+        (err: unknown) => {
+          if (err instanceof BoardRefusedError) markKnown(o.sent, out)
+          else
+            retry = setTimeout(() => {
+              retry = undefined
+              flush()
+            }, delay)
+          delay = Math.min(delay * 2, 60_000)
+          o.onError(err)
+        },
+      )
+      .finally(() => {
+        busy = false
+        if (again) {
+          again = false
+          flush()
+        }
+      })
+  }
+  return {
+    flush,
+    cancel: () => {
+      clearTimeout(retry)
+      retry = undefined
+      again = false
+    },
+  }
 }
 
 /** Remembers versions that arrived from the council, so they are not sent back. */

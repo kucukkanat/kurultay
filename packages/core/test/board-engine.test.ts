@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { Kurultay, MemoryStorage, buildElements, chunkElements, editElements, newSecretKey, visible, type BoardElement } from '../src'
+import { BOARD_POINTER_PER_MINUTE, BOARD_SEND_PER_MINUTE, BoardRefusedError, Kurultay, MemoryStorage, buildElements, chunkElements, editElements, newSecretKey, visible, type BoardElement } from '../src'
 import { startTestRelay, type TestRelay } from '../src/testing/relay'
 
 // The board over a real (in-process) relay: what members see, what the relay sees, and who is shut out.
@@ -151,5 +151,57 @@ describe('the council board', () => {
     expect(got[0]).toMatchObject({ x: 10, y: 21 })
     expect(JSON.stringify(b.state)).not.toContain('board_ptr')
     expect(b.boardScene(g.id)).toEqual({})
+  })
+
+  test('moving the pointer never uses up what drawing needs', async () => {
+    const { g, all: [a, b] } = await council(['mover', 'human'], ['watcher', 'human'])
+    if (!a || !b) throw new Error('setup')
+    let pointers = 0
+    b.on('pointer', (p) => p.groupId === g.id && pointers++)
+    for (let i = 0; i < BOARD_POINTER_PER_MINUTE + 20; i++) await a.boardPointer(g.id, i, i)
+    await a.drawBoard(g.id, buildElements([{ kind: 'text', x: 0, y: 0, text: 'still syncing' }]))
+    await until(() => texts(b, g.id).includes('still syncing'))
+    // pointers past their own budget are skipped quietly
+    await until(() => pointers === BOARD_POINTER_PER_MINUTE)
+  })
+
+  test('drawing has a per-minute budget, and answering a newcomer does not come out of it', async () => {
+    const { g, all: [a, b] } = await council(['busy', 'human'], ['newcomer', 'human'])
+    if (!a || !b) throw new Error('setup')
+    for (let i = 0; i < BOARD_SEND_PER_MINUTE; i++) await a.drawBoard(g.id, buildElements([{ kind: 'rectangle', x: i, y: 0 }]))
+    await expect(a.drawBoard(g.id, buildElements([{ kind: 'rectangle', x: -1, y: 0 }]))).rejects.toThrow(/Board rate limit/)
+    await until(() => Object.keys(b.boardScene(g.id)).length === BOARD_SEND_PER_MINUTE)
+    if (b.state.groups[g.id]) b.state.groups[g.id].board = {}
+    await b.requestBoard(g.id)
+    await until(() => Object.keys(b.boardScene(g.id)).length === BOARD_SEND_PER_MINUTE)
+  }, 20_000)
+
+  test('a flood of board requests gets one answer, and the council is not answered again right away', async () => {
+    const { g, all: [host, asker, other] } = await council(['holder', 'human'], ['flooder', 'human'], ['second', 'human'])
+    if (!host || !asker || !other) throw new Error('setup')
+    await host.drawBoard(g.id, buildElements(Array.from({ length: 60 }, (_, i) => ({ kind: 'rectangle' as const, x: i * 10, y: 0, label: `card ${i} ${'x'.repeat(300)}` }))))
+    await until(() => Object.keys(other.boardScene(g.id)).length === Object.keys(host.boardScene(g.id)).length)
+    let full = 0
+    for (const p of [host, other]) p.on('raw', (r) => r.dir === 'out' && r.env?.type === 'board' && 'full' in r.env && r.env.full && full++)
+    for (let i = 0; i < 10; i++) await asker.requestBoard(g.id)
+    await Bun.sleep(2500)
+    const chunks = chunkElements(Object.values(host.boardScene(g.id))).length
+    expect(full).toBe(chunks)
+    // someone else asks right after: a whole board just went out, so the next one waits
+    await other.requestBoard(g.id)
+    await Bun.sleep(2500)
+    expect(full).toBe(chunks)
+  }, 20_000)
+
+  test('a drawing the board refuses is reported, and the rest still reaches everyone', async () => {
+    const { g, all: [a, b] } = await council(['artist', 'human'], ['viewer', 'human'])
+    if (!a || !b) throw new Error('setup')
+    const [ok] = buildElements([{ kind: 'text', x: 0, y: 0, text: 'fits' }])
+    if (!ok) throw new Error('setup')
+    const huge = { ...ok, id: 'huge', type: 'freedraw', points: Array.from({ length: 3000 }, (_, i) => [i, i]) }
+    const err = await a.drawBoard(g.id, [ok, huge]).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(BoardRefusedError)
+    expect(err instanceof BoardRefusedError && err.sent.map((e) => e.id)).toEqual([ok.id])
+    await until(() => texts(b, g.id).includes('fits'))
   })
 })

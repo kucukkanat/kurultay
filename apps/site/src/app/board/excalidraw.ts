@@ -7,8 +7,8 @@ import { CaptureUpdateAction, Excalidraw, restoreElements } from '@excalidraw/ex
 import '@excalidraw/excalidraw/index.css'
 import type { Collaborator, ExcalidrawImperativeAPI, SocketId } from '@excalidraw/excalidraw/types'
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
-import type { Kurultay } from '@kurultay/core'
-import { applyRemote, CURSOR_TTL_MS, cursorColor, liveCursors, markKnown, takeUnsent, throttle, type Cursor } from './sync'
+import { BOARD_POINTER_PER_MINUTE, BOARD_SEND_PER_MINUTE, type Kurultay } from '@kurultay/core'
+import { applyRemote, boardSender, CURSOR_TTL_MS, cursorColor, liveCursors, markKnown, throttle, type Cursor } from './sync'
 
 export type BoardTheme = 'light' | 'dark'
 
@@ -25,9 +25,16 @@ export interface BoardHandle {
   destroy(): void
 }
 
-/** Local edits go out at most this often: a drag becomes a few small envelopes a second, not one per frame. */
-const SEND_MS = 120
-const POINTER_MS = 90
+/**
+ * Local edits go out at most this often: a drag becomes a few small envelopes a second, not one per frame, and a whole
+ * minute of dragging stays under the engine's drawing budget (with room for a large edit that takes several envelopes).
+ */
+const SEND_MS = Math.ceil((60_000 / BOARD_SEND_PER_MINUTE) * 1.25)
+/** Pointers have their own budget in the engine; moving at this pace never runs it out. */
+const POINTER_MS = Math.ceil(60_000 / BOARD_POINTER_PER_MINUTE)
+/** After a failed send (rate limit, relay down), the unsent edits are tried again this much later. */
+const RETRY_MS = 3000
+const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 /** Elements from the engine (sanitized JSON) as Excalidraw elements, with any missing defaults filled in. */
 const restore = (els: readonly unknown[]): ExcalidrawElement[] => restoreElements(els as readonly ExcalidrawElement[], null)
@@ -74,7 +81,7 @@ function Board({ e, groupId, theme, onError }: BoardOptions) {
     })
     const sweep = setInterval(showCursors, CURSOR_TTL_MS / 2)
     // whoever has the board sends it; what arrives merges into what this device already had
-    e.requestBoard(groupId).catch((err: unknown) => onError(err instanceof Error ? err.message : String(err)))
+    e.requestBoard(groupId).catch((err: unknown) => onError(message(err)))
     return () => {
       offBoard()
       offPointer()
@@ -84,17 +91,13 @@ function Board({ e, groupId, theme, onError }: BoardOptions) {
 
   // Excalidraw bumps the version of what a local edit changed: send exactly those, a few times a second at most
   const pointer = useRef(throttle(POINTER_MS, (x: number, y: number) => void e.boardPointer(groupId, x, y).catch(() => {})))
-  const onChange = useRef(
-    throttle(SEND_MS, () => {
-      const scene = api.current?.getSceneElementsIncludingDeleted()
-      const out = scene ? takeUnsent(sent.current, scene) : []
-      if (out.length) e.drawBoard(groupId, out).catch((err: unknown) => onError(err instanceof Error ? err.message : String(err)))
-    }),
-  )
+  const sender = useRef(boardSender({ sent: sent.current, scene: () => api.current?.getSceneElementsIncludingDeleted() ?? [], draw: (els) => e.drawBoard(groupId, els), onError: (err) => onError(message(err)), retryMs: RETRY_MS }))
+  const onChange = useRef(throttle(SEND_MS, () => sender.current.flush()))
   useEffect(
     () => () => {
       pointer.current.cancel()
       onChange.current.cancel()
+      sender.current.cancel()
     },
     [],
   )

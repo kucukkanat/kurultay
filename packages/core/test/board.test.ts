@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  MAX_BOARD_ELEMENTS, MAX_CHUNK_BYTES, buildElements, chunkElements, edgePoint, editElements, mergeElements, newer, sanitizeElement, summarize, visible,
+  MAX_BOARD_ELEMENTS, MAX_BOARD_TOMBSTONES, MAX_CHUNK_BYTES, MAX_VERSION, buildElements, chunkElements, edgePoint, editElements, mergeElements, newer, sanitizeElement, summarize, visible,
   type BoardElement,
 } from '../src/board'
 
@@ -86,10 +86,46 @@ describe('mergeElements', () => {
     expect(mergeElements(next, [el({ id: 'x', version: 1 })]).changed).toEqual([])
   })
 
-  test('a full board takes edits to known elements but no new ones', () => {
+  test('a full board takes edits to known elements but no new ones, and counts what it refused', () => {
     const full = Object.fromEntries(Array.from({ length: MAX_BOARD_ELEMENTS }, (_, i) => [`e${i}`, el({ id: `e${i}` })]))
-    const { changed } = mergeElements(full, [el({ id: 'new' }), el({ id: 'e0', version: 2 })])
+    const { changed, refused } = mergeElements(full, [el({ id: 'new' }), el({ id: 'e0', version: 2 }), { bogus: true }])
     expect(changed.map((c) => c.id)).toEqual(['e0'])
+    expect(refused).toBe(2)
+    // reviving a tombstone shows one more element: refused too
+    const withTomb = { ...full, gone: el({ id: 'gone', isDeleted: true }) }
+    expect(mergeElements(withTomb, [el({ id: 'gone', version: 2 })]).refused).toBe(1)
+  })
+
+  test('only shown elements count: deleting makes room, tombstones never fill a board', () => {
+    const full = Object.fromEntries(Array.from({ length: MAX_BOARD_ELEMENTS }, (_, i) => [`e${i}`, el({ id: `e${i}` })]))
+    const { next } = mergeElements(full, [el({ id: 'e0', version: 2, isDeleted: true })])
+    const added = mergeElements(next, [el({ id: 'new' }), el({ id: 'newer' })])
+    expect(added.changed.map((c) => c.id)).toEqual(['new'])
+    expect(added.refused).toBe(1)
+  })
+
+  test('the oldest tombstones are forgotten beyond the cap, and nothing shown is', () => {
+    const dead = Array.from({ length: MAX_BOARD_TOMBSTONES + 5 }, (_, i) => el({ id: `d${i}`, isDeleted: true, updated: i + 1 }))
+    const { next, changed } = mergeElements(scene(el({ id: 'live', updated: 0 })), dead)
+    expect(changed).toHaveLength(dead.length)
+    expect(Object.keys(next)).toHaveLength(MAX_BOARD_TOMBSTONES + 1)
+    expect(next.live).toBeDefined()
+    expect(next.d0).toBeUndefined()
+    expect(next.d4).toBeUndefined()
+    expect(next.d5).toBeDefined()
+  })
+
+  test('a version too high to supersede is lowered to the cap, where a deletion still wins', () => {
+    const pinned = sanitizeElement(el({ version: 1e308, versionNonce: -(2 ** 31) }))
+    expect(pinned?.version).toBe(MAX_VERSION)
+    if (!pinned) throw new Error('setup')
+    // an edit from Excalidraw is version + 1: lowered to the cap, it ties; the deletion wins the tie on every copy
+    const del = mergeElements(scene(pinned), [el({ version: MAX_VERSION + 1, versionNonce: 99, isDeleted: true })])
+    expect(visible(del.next)).toEqual([])
+    expect(mergeElements(del.next, [pinned]).changed).toEqual([])
+    // an agent's edit stays at the cap too
+    const [edited] = editElements(scene(pinned), [pinned.id], 'delete')
+    expect(edited?.version).toBe(MAX_VERSION)
   })
 })
 

@@ -25,8 +25,18 @@ export interface BoardElement {
 
 export type BoardScene = Readonly<Record<string, BoardElement>>
 
-/** A board holds at most this many elements, tombstones included (other copies merge against them). */
+/** A board shows at most this many elements. Only live ones count: a board people drew on and cleared stays usable. */
 export const MAX_BOARD_ELEMENTS = 4000
+/**
+ * Deleted elements kept as tombstones, so an older copy cannot bring them back. Past this, the oldest (by `updated`) are
+ * forgotten: memory stays bounded, at the cost that a member who still holds a long-deleted element could revive it.
+ */
+export const MAX_BOARD_TOMBSTONES = 4000
+/**
+ * The highest version an element may carry. A version near 2^53 cannot be bumped (version + 1 rounds back to itself), so
+ * a member could pin an element nobody can change. Higher versions are lowered to this; at the cap a deletion still wins.
+ */
+export const MAX_VERSION = 2 ** 31 - 1
 /** One element as JSON. A long freehand stroke is the largest thing a person draws; this is far above it. */
 export const MAX_ELEMENT_BYTES = 24 * 1024
 /** One board envelope's elements as JSON: under the 32 KB message limit, with room for the envelope. */
@@ -67,7 +77,7 @@ export function sanitizeElement(input: unknown): BoardElement | null {
   const { customData: _dropped, ...rest } = input
   // a link is the one field Excalidraw turns into navigation: only plain web addresses
   const link = input.link === undefined || (typeof input.link === 'string' && /^https?:\/\/\S{1,2000}$/i.test(input.link)) ? input.link : null
-  const out: BoardElement = { ...rest, id, type, version, versionNonce, isDeleted, x, y, width, height, updated: finite(input.updated, 0, 1e14) ? input.updated : 0, ...(link === undefined ? {} : { link }) }
+  const out: BoardElement = { ...rest, id, type, version: Math.min(version, MAX_VERSION), versionNonce, isDeleted, x, y, width, height, updated: finite(input.updated, 0, 1e14) ? input.updated : 0, ...(link === undefined ? {} : { link }) }
   return bytes(out) <= MAX_ELEMENT_BYTES ? out : null
 }
 
@@ -76,31 +86,47 @@ export interface Versioned {
   readonly id: string
   readonly version: number
   readonly versionNonce: number
+  readonly isDeleted: boolean
 }
 
-/** Whether `a` should replace `b`: the newer version wins; on a tie the lower nonce wins, so every copy picks the same. */
-export const newer = (a: Versioned, b: Versioned | undefined): boolean => !b || a.version > b.version || (a.version === b.version && a.versionNonce < b.versionNonce)
+/**
+ * Whether `a` should replace `b`: the newer version wins. On a tie a deletion wins (so an element held at MAX_VERSION can
+ * still be removed), then the lower nonce, so every copy picks the same.
+ */
+export const newer = (a: Versioned, b: Versioned | undefined): boolean =>
+  !b || a.version > b.version || (a.version === b.version && (a.isDeleted !== b.isDeleted ? a.isDeleted : a.versionNonce < b.versionNonce))
+
+/** The scene without its oldest tombstones beyond MAX_BOARD_TOMBSTONES. */
+function compact(scene: Record<string, BoardElement>): Record<string, BoardElement> {
+  const dead = Object.values(scene).filter((e) => e.isDeleted)
+  if (dead.length <= MAX_BOARD_TOMBSTONES) return scene
+  const drop = new Set(dead.sort((a, b) => a.updated - b.updated || a.id.localeCompare(b.id)).slice(0, dead.length - MAX_BOARD_TOMBSTONES).map((e) => e.id))
+  return Object.fromEntries(Object.entries(scene).filter(([id]) => !drop.has(id)))
+}
 
 /**
- * Brings incoming elements into a scene. Returns the next scene (the input is not changed) and the elements that changed
- * it, which is what a renderer applies and what a peer sends. A full board never grows past MAX_BOARD_ELEMENTS: new
- * elements beyond it are refused, edits to known ones still land.
+ * Brings incoming elements into a scene. Returns the next scene (the input is not changed), the elements that changed it
+ * (what a renderer applies and what a peer sends) and how many were refused: malformed or too large, or new on a board
+ * already showing MAX_BOARD_ELEMENTS. Edits and deletions of shown elements always land. Older is not refused, just stale.
  */
-export function mergeElements(scene: BoardScene, incoming: readonly unknown[]): { next: Record<string, BoardElement>; changed: BoardElement[] } {
+export function mergeElements(scene: BoardScene, incoming: readonly unknown[]): { next: Record<string, BoardElement>; changed: BoardElement[]; refused: number } {
   const next: Record<string, BoardElement> = { ...scene }
   const changed: BoardElement[] = []
-  let count = Object.keys(next).length
+  let refused = 0
+  let live = visible(next).length
   for (const raw of incoming) {
     const el = sanitizeElement(raw)
-    if (!el || !newer(el, next[el.id])) continue
-    if (!next[el.id]) {
-      if (count >= MAX_BOARD_ELEMENTS) continue
-      count++
+    const cur = el ? next[el.id] : undefined
+    if (!el) refused++
+    else if (!newer(el, cur)) continue
+    else if (!el.isDeleted && (!cur || cur.isDeleted) && live >= MAX_BOARD_ELEMENTS) refused++
+    else {
+      live += (el.isDeleted ? 0 : 1) - (cur && !cur.isDeleted ? 1 : 0)
+      next[el.id] = el
+      changed.push(el)
     }
-    next[el.id] = el
-    changed.push(el)
   }
-  return { next, changed }
+  return { next: compact(next), changed, refused }
 }
 
 /** Cuts elements into groups whose JSON stays under `max` bytes, keeping their order. */
@@ -173,7 +199,7 @@ function textEl(at: Point, body: string, fontSize: number, stroke: string, conta
 const centre = (e: BoardElement): Point => ({ x: e.x + e.width / 2, y: e.y + e.height / 2 })
 const boundOf = (e: BoardElement): Bound[] => (Array.isArray(e.boundElements) ? e.boundElements.filter((b): b is Bound => isRecord(b) && typeof b.id === 'string' && typeof b.type === 'string') : [])
 /** A new version of an element: the edit every other copy will take. */
-const bump = (e: BoardElement, fields: Record<string, unknown> = {}): BoardElement => ({ ...e, ...fields, version: e.version + 1, versionNonce: nonce(), updated: Date.now() })
+const bump = (e: BoardElement, fields: Record<string, unknown> = {}): BoardElement => ({ ...e, ...fields, version: Math.min(e.version + 1, MAX_VERSION), versionNonce: nonce(), updated: Date.now() })
 
 /** Where the line from a box's centre towards `toward` leaves the box: arrows start and end on edges, not in the middle. */
 export function edgePoint(e: BoardElement, toward: Point): Point {

@@ -52,13 +52,15 @@ Here is the flow.
 ```
 ````
 
+When one background turn answers more than one council, each block goes on one board only: the council it names with `"council": "planning"`, or else the council of the newest message. Each council's reply only mentions its own board.
+
 The service applies the block to the board and replaces it with a short note, such as _(On the board: drew 3, edited 1, removed 1.)_. The council never sees raw JSON. A block that is not valid becomes a one-line note that says what was wrong. Drawing counts as speech, not file access, so an agent may draw at every permission level that answers, including **Answer when tagged** alone.
 
 The background prompt lists each council's board (at most 60 lines), so the agent knows the ids it can edit.
 
 ## What a board can hold
 
-Shapes, text, arrows, lines, freehand drawing and frames, up to 4000 elements per board. Images and embedded web pages are not available, because they would load content from outside the council. Links on shapes must be `http(s)`.
+Shapes, text, arrows, lines, freehand drawing and frames, up to 4000 elements on a board at once. Deleted elements do not count, so clearing part of a board makes room again. If something you draw cannot go on the board (the board is full, or one stroke is over 24 KB), the app says so instead of showing a drawing nobody else sees. Images and embedded web pages are not available, because they would load content from outside the council. Links on shapes must be `http(s)`.
 
 ## Fonts
 
@@ -70,5 +72,11 @@ The wire format is in the [protocol](nip.html#board). In short:
 
 - **Envelopes:** `board` carries the elements that changed, `board_req` asks for the whole board, and `board_ptr` carries a pointer.
 - **Merging:** a higher `version` wins. On a tie, the lower `versionNonce` wins, so every copy settles on the same board.
-- **Deletions:** a deleted element is kept as a tombstone, so an old copy of it cannot come back.
-- **Rate limits:** board updates have their own limit, 300 a minute per council, so dragging a shape never uses up the chat limit.
+- **Merging:** on a tie a deletion wins first, so anything can be removed. Versions above 2^31 − 1 are lowered to it, so no one can pin an element that nobody else can change.
+- **Deletions:** a deleted element is kept as a tombstone, so an old copy of it cannot come back. A board keeps the 4000 most recent tombstones. If someone who was away still has a copy of something deleted long ago, that copy can come back.
+- **Rate limits:** board traffic has its own limits, so dragging a shape never uses up the chat limit. Drawing allows 300 updates a minute per council. Pointers and whole-board answers each have their own budget, so moving the mouse or helping a newcomer never stops your drawing from syncing. When a send fails, the app tries again a few seconds later, so your changes still reach the others.
+- **Catching up:** each member gets an answer to their request for the whole board at most once a minute, and a council gets a whole board at most every 15 seconds. Asking many times cannot make everyone resend it.
+
+## On this device
+
+The app keeps each board apart from your keys and councils, encrypted the same way. All boards together may use about 2 MB of the browser's storage. A board bigger than that is not kept on this device; the app tells you once, and the council sends it again when you open the board. If the app ever cannot save your keys and councils, it shows an error instead of failing quietly.

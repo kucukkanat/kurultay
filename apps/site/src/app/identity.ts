@@ -1,4 +1,4 @@
-import { bytesToHex, getPublicKey, hexToBytes, newSecretKey, type State, type Storage } from '@kurultay/core'
+import { bytesToHex, getPublicKey, hexToBytes, newSecretKey, type BoardElement, type State, type Storage } from '@kurultay/core'
 import * as nip19 from 'nostr-tools/nip19'
 
 const ID_KEY = 'kurultay:identity'
@@ -14,7 +14,13 @@ export interface Unlocked {
   aes: CryptoKey | null
 }
 
-const b64 = (b: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(b as ArrayBuffer)))
+// in slices: spreading a whole board's bytes as arguments would overflow the call stack
+const b64 = (b: ArrayBuffer | Uint8Array) => {
+  const u = new Uint8Array(b as ArrayBuffer)
+  let s = ''
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000))
+  return btoa(s)
+}
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
 const rand = (n: number) => crypto.getRandomValues(new Uint8Array(n))
 
@@ -34,6 +40,7 @@ function saveIdentity(r: IdentityRecord) {
 export function forgetIdentity(pubkey: string) {
   localStorage.removeItem(ID_KEY)
   localStorage.removeItem('kurultay:state:' + pubkey)
+  for (const k of storedKeys().filter((k) => k.startsWith(boardPrefix(pubkey)))) localStorage.removeItem(k)
   void idbDel(pubkey)
 }
 
@@ -178,17 +185,40 @@ export async function unlock(record: IdentityRecord): Promise<Unlocked> {
   return { record, sk, aes }
 }
 
-/** Engine state in localStorage; encrypted with the passkey-derived key when available. */
+const boardPrefix = (pubkey: string) => `kurultay:board:${pubkey}:`
+const storedKeys = (): string[] => Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? '')
+
+/**
+ * Room for all of one identity's boards, in localStorage characters. An origin gets about 5 MB; boards may use this much
+ * and no more, so a busy board can never take the space that keys and councils need.
+ */
+export const BOARD_STORE_CHARS = 2_000_000
+
+/** A board that would push this device's boards past BOARD_STORE_CHARS; it is not kept here, peers send it again. */
+export class BoardStoreFullError extends Error {}
+
+/**
+ * Engine state in localStorage, encrypted with the passkey-derived key when available. Boards are kept apart, one key per
+ * council, under BOARD_STORE_CHARS. A failed save throws, and the engine tells the user.
+ */
 export class BrowserStorage implements Storage {
   private key: string
   constructor(
-    pubkey: string,
+    private pubkey: string,
     private aes: CryptoKey | null,
   ) {
     this.key = 'kurultay:state:' + pubkey
   }
-  async load(): Promise<State | null> {
-    const raw = localStorage.getItem(this.key)
+  private async seal(value: unknown): Promise<string> {
+    const json = JSON.stringify(value)
+    if (!this.aes) return json
+    const iv = rand(12)
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, this.aes, new TextEncoder().encode(json))
+    return JSON.stringify({ enc: 1, iv: b64(iv), ct: b64(ct) })
+  }
+  /** What `seal` wrote, or null when it is missing or cannot be read with this key. */
+  private async open<T>(key: string): Promise<T | null> {
+    const raw = localStorage.getItem(key)
     if (!raw) return null
     try {
       const obj = JSON.parse(raw)
@@ -201,18 +231,27 @@ export class BrowserStorage implements Storage {
       return null
     }
   }
+  load(): Promise<State | null> {
+    return this.open<State>(this.key)
+  }
   async save(state: State) {
-    const json = JSON.stringify(state)
-    try {
-      if (this.aes) {
-        const iv = rand(12)
-        const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, this.aes, new TextEncoder().encode(json))
-        localStorage.setItem(this.key, JSON.stringify({ enc: 1, iv: b64(iv), ct: b64(ct) }))
-      } else {
-        localStorage.setItem(this.key, json)
-      }
-    } catch (err) {
-      console.warn('[kurultay] could not save state', err)
+    localStorage.setItem(this.key, await this.seal(state))
+  }
+  loadBoard(groupId: string): Promise<Record<string, BoardElement> | null> {
+    return this.open<Record<string, BoardElement>>(boardPrefix(this.pubkey) + groupId)
+  }
+  async saveBoard(groupId: string, board: Record<string, BoardElement> | null) {
+    const key = boardPrefix(this.pubkey) + groupId
+    if (!board || !Object.keys(board).length) return localStorage.removeItem(key)
+    const sealed = await this.seal(board)
+    const others = storedKeys()
+      .filter((k) => k.startsWith(boardPrefix(this.pubkey)) && k !== key)
+      .reduce((n, k) => n + (localStorage.getItem(k)?.length ?? 0), 0)
+    if (others + sealed.length > BOARD_STORE_CHARS) {
+      // an older, smaller copy would come back on reload looking current: drop it, the council has the board
+      localStorage.removeItem(key)
+      throw new BoardStoreFullError(`boards on this device may use ${(BOARD_STORE_CHARS / 1e6).toFixed(0)} MB`)
     }
+    localStorage.setItem(key, sealed)
   }
 }
