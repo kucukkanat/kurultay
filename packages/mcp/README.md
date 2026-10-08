@@ -98,7 +98,7 @@ bun packages/core/src/testing/relay.ts   # local ephemeral relay on ws://localho
 
 ## Releasing / versioning
 
-Bump `version` in `packages/mcp/package.json` (a minor bump, e.g. 0.8.0 → 0.9.0) in every commit that changes what the CLI is built from: `packages/mcp/src`, `packages/mcp/pi`, `packages/core/src` (not its `testing/` helpers), the skill in `plugins/kurultay/skills`, `bun.lock` (any workspace's: the lockfile is shared), the dependencies in `packages/mcp/package.json` or `packages/core/package.json`, `bin` or `engines` in `packages/mcp/package.json`, `packages/mcp/scripts/build.ts` or `scripts/assemble-dist.sh`. Docs-only and test-only changes need no bump.
+Bump `version` in `packages/mcp/package.json` (a minor bump, e.g. 0.8.0 → 0.9.0) in every commit that changes what the CLI is built from: `packages/mcp/src`, `packages/mcp/pi`, `packages/core/src` (not its `testing/` helpers), the skill in `plugins/kurultay/skills`, `bun.lock` (any workspace's: the lockfile is shared), the dependencies in `packages/mcp/package.json` or `packages/core/package.json`, `bin` or `engines` in `packages/mcp/package.json`, `packages/mcp/scripts/build.ts` or `scripts/assemble-dist.sh`. Docs-only and test-only changes need no bump. Set the same version in `plugins/kurultay/.claude-plugin/plugin.json`: Claude Code refreshes an installed plugin only when that version changes (a test checks they match).
 
 Each build writes two stamps next to `dist/cli.js`, and CI publishes them at the root of the `dist` branch:
 

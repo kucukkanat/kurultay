@@ -116,3 +116,9 @@ test('real builds: COMMIT follows the commit, BUILD_HASH only the sources', asyn
   expect(a.hash).toMatch(/^src3:[0-9a-f]{64}$/)
   expect(b.hash).toBe(a.hash)
 })
+
+// Claude Code refreshes an installed plugin only when its manifest's version changes, so it must follow the CLI's
+test('the Claude Code plugin manifest carries the CLI version', () => {
+  const version = (path: string): unknown => JSON.parse(readFileSync(join(repo, path), 'utf8')).version
+  expect(version('plugins/kurultay/.claude-plugin/plugin.json')).toBe(version('packages/mcp/package.json'))
+})
