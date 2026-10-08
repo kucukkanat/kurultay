@@ -1,11 +1,11 @@
 // Integration: the profile editor rendered into happy-dom, driving a real (offline) engine. Registered only for this
 // file so the packages tests keep Bun's native fetch and WebSocket.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { Kurultay, MemoryStorage, newSecretKey } from '@kurultay/core'
 
-beforeAll(() => GlobalRegistrator.register({ url: 'http://localhost:5173/app/' }))
-afterAll(() => GlobalRegistrator.unregister())
+beforeAll(() => registerDom())
+afterAll(() => unregisterDom())
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 

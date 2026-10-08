@@ -2,7 +2,7 @@
 // in-process relay. Pins down what the person notices: the tab title and icon, the banners, vibration, the gesture that
 // unlocks audio, and the rule that a council is read only while it is open, visible and focused.
 // Registered only for this file so the packages tests keep Bun's native fetch and WebSocket.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from 'bun:test'
 import { Kurultay, MemoryStorage, newSecretKey } from '@kurultay/core'
 import { startTestRelay } from '@kurultay/core/testing'
@@ -35,7 +35,7 @@ class LockedAudio {
 }
 
 beforeAll(() => {
-  GlobalRegistrator.register({ url: 'http://localhost:5173/app/' })
+  registerDom()
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
   document.hasFocus = () => focused
   Object.defineProperty(navigator, 'vibrate', { configurable: true, value: (p: number | number[]) => (vibrations.push(p), true) })
@@ -53,7 +53,7 @@ afterAll(async () => {
   await stopEngine()
   await bo.stop()
   localStorage.clear()
-  await GlobalRegistrator.unregister()
+  await unregisterDom()
   relay.stop()
 })
 
@@ -143,11 +143,12 @@ test('the title, icon, banners and the read rule follow what the person is looki
   expect(hasDot()).toBe(false)
   expect(unread(beta.id)).toBe(0)
 
-  // read marks are in whole seconds: let the next messages land in a later one
-  await Bun.sleep(1100)
-
   // blurred, beta stays open but is not read: it counts, and still gets a banner since the tab is visible
   set('visible', false)
+  await frame()
+  // read marks are in whole seconds, and every render while beta was in front marked it: blurred, nothing marks it any
+  // more, so wait out the second of the last mark and let the next messages land in a later one
+  await Bun.sleep(1100)
   await bo.send(beta.id, 'while away')
   await arrived(beta.id, 4)
   expect(unread(beta.id)).toBe(1)

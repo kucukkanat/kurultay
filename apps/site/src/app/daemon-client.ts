@@ -40,7 +40,8 @@ const set = (patch: Partial<DaemonClientState>) => {
 
 export const daemonState = (): DaemonClientState => state
 
-// Storage can be blocked (private mode, site data off): the token is then only kept for this page's lifetime.
+// Storage can be blocked (private mode, site data off): only then is the token kept in memory, for this page's lifetime.
+// A copy kept while storage works would outlive its removal there (unpaired in another tab, site data cleared).
 let memoryToken: string | null = null
 const read = (key: string): string | null => {
   try {
@@ -51,11 +52,13 @@ const read = (key: string): string | null => {
 }
 const token = () => read(TOKEN_KEY) ?? memoryToken
 const saveToken = (t: string | null) => {
-  memoryToken = t
   try {
     if (t) localStorage.setItem(TOKEN_KEY, t)
     else localStorage.removeItem(TOKEN_KEY)
-  } catch {}
+    memoryToken = null
+  } catch {
+    memoryToken = t
+  }
 }
 const port = () => {
   const p = Number(read(PORT_KEY))
@@ -112,10 +115,11 @@ async function look() {
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined
-let watching = false
+/** How many watchers (components showing the service, or callers of watchDaemon) are still around. */
+let watchers = 0
 const schedule = () => {
   clearTimeout(timer)
-  if (!watching) return
+  if (watchers === 0) return
   timer = setTimeout(() => void (document.visibilityState === 'hidden' ? schedule() : look().finally(schedule)), nextDelay(state.status, misses))
 }
 /** Look now (after an action, or back on the tab) instead of waiting for the next poll. */
@@ -127,17 +131,20 @@ const onVisible = () => {
 }
 
 /**
- * Keep looking for the service while the app is open. Started by the first component that shows it, not on page load:
+ * Keep looking for the service while something shows it. Started by the first component that shows it, not on page load:
  * reaching 127.0.0.1 can make the browser ask about local network access, which only people adding agents should see.
+ * Counted, so one watcher stopping leaves the others polling, and the last one to stop ends the polling and its listener.
  */
 export function watchDaemon(): () => void {
-  if (!watching) {
-    watching = true
+  if (watchers++ === 0) {
     document.addEventListener('visibilitychange', onVisible)
     void refresh()
   }
+  let stopped = false
   return () => {
-    watching = false
+    if (stopped) return
+    stopped = true
+    if (--watchers > 0) return
     clearTimeout(timer)
     document.removeEventListener('visibilitychange', onVisible)
   }
@@ -149,8 +156,11 @@ export function useDaemon(): DaemonClientState {
   useEffect(() => {
     const f = () => force()
     subs.add(f)
-    watchDaemon()
-    return () => void subs.delete(f)
+    const stop = watchDaemon()
+    return () => {
+      subs.delete(f)
+      stop()
+    }
   }, [])
   return state
 }

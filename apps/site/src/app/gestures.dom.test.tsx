@@ -1,11 +1,11 @@
 // Integration: the drawer swipe hook and the dialog rendered into happy-dom at phone width, driven by real touch and mouse
 // events. Registered only for this file so the packages tests keep Bun's native fetch and WebSocket.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { PHONE_MAX } from '../shared/theme'
 
-beforeAll(() => GlobalRegistrator.register({ url: 'http://localhost:5173/app/', width: 375, height: 800 }))
-afterAll(() => GlobalRegistrator.unregister())
+beforeAll(() => registerDom({ width: 375, height: 800 }))
+afterAll(() => unregisterDom())
 
 // effects (where the hook adds its listeners) run after the frame, so give preact a beat after every render and event
 const settle = () => new Promise((r) => setTimeout(r, 30))

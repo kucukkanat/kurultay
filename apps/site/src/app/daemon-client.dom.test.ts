@@ -1,6 +1,6 @@
 // Integration: the page's daemon client, in happy-dom (so requests carry the app's Origin), against a real
 // `kurultay daemon` and real `kurultay pair` subprocesses. Registered only for this file so other tests keep Bun's fetch.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -28,16 +28,14 @@ beforeAll(async () => {
   daemon = Bun.spawn(['bun', cli, 'daemon'], { env, cwd: home, stdout: 'ignore', stderr: 'inherit' })
   await until(() => existsSync(join(kHome, 'daemon.port')))
   port = readFileSync(join(kHome, 'daemon.port'), 'utf8').trim()
-  GlobalRegistrator.register({ url: 'http://localhost:5173/app/' })
+  registerDom()
 })
 afterAll(async () => {
   daemon?.kill()
-  // this test's toasts expire on a timer and repaint through requestAnimationFrame: let that happen in this window, or
-  // the store keeps waiting for a frame that never comes and the next DOM test file never re-renders
+  // this test's toasts expire on a timer that dies with this window: let them expire here, not linger into the next file
   const { toasts } = await import('./store')
   await until(() => !toasts.some((t) => t.text.startsWith('Agents ')), 8000)
-  await new Promise((r) => requestAnimationFrame(r))
-  await GlobalRegistrator.unregister()
+  await unregisterDom()
 })
 
 const byId = (id: string): HTMLElement | null => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)

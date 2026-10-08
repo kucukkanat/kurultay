@@ -1,16 +1,16 @@
 // Integration: the board panel rendered into happy-dom around a real (offline) engine. Registered only for this file so
 // the packages tests keep Bun's native fetch and WebSocket.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { Kurultay, MemoryStorage, newSecretKey } from '@kurultay/core'
 import { startTestRelay } from '@kurultay/core/testing'
 
 const relay = startTestRelay(0)
 const engines: Kurultay[] = []
-beforeAll(() => GlobalRegistrator.register({ url: 'http://localhost:5173/kurultay/app/' }))
-afterAll(() => {
+beforeAll(() => registerDom({ url: 'http://localhost:5173/kurultay/app/' }))
+afterAll(async () => {
   engines.forEach((e) => e.pool.close())
-  GlobalRegistrator.unregister()
+  await unregisterDom()
   relay.stop()
 })
 

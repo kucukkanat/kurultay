@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,21 +21,34 @@ const quiet = async (args: string[]) => {
 }
 const seatedName = (home: string, host: string): unknown =>
   JSON.parse(readFileSync(join(home, `.config/kurultay/instances/${host}#1/state.json`), 'utf8')).agentSettings?.name
-afterAll(async () => {
-  await owner?.stop()
-  relay.stop()
-})
-
-test('kurultay join: one command configures hosts and seats the agents', async () => {
-  const home = mkdtempSync(join(tmpdir(), 'kurultay-join-'))
+// runJoin reads its setup from the environment: set it for this file and put it back after, so no other file sees it
+const ENV = ['HOME', 'KURULTAY_HOME', 'KURULTAY_NO_KEYCHAIN', 'KURULTAY_RELAYS', 'KURULTAY_MACHINE'] as const
+const savedEnv = ENV.map((k) => [k, process.env[k]] as const)
+/** a fresh computer for each test: its own home, so no test depends on what another seated */
+const freshHome = (prefix: string) => {
+  const home = mkdtempSync(join(tmpdir(), prefix))
   process.env.HOME = home
   process.env.KURULTAY_HOME = join(home, '.config/kurultay')
+  return home
+}
+beforeAll(async () => {
   process.env.KURULTAY_NO_KEYCHAIN = '1'
   process.env.KURULTAY_RELAYS = relay.url
   process.env.KURULTAY_MACHINE = 'testbox'
-
   owner = new Kurultay({ sk: newSecretKey(), name: 'tolga', kind: 'human', relays: [relay.url], storage: new MemoryStorage(), presenceInterval: 3_600_000 })
   await owner.start()
+})
+afterAll(async () => {
+  await owner?.stop()
+  relay.stop()
+  for (const [k, v] of savedEnv) {
+    if (v === undefined) delete process.env[k]
+    else process.env[k] = v
+  }
+})
+
+test('kurultay join: one command configures hosts and seats the agents', async () => {
+  const home = freshHome('kurultay-join-')
   const g = owner.createGroup('release-council')
   const ticket = owner.createTicket([g.id])
 
@@ -65,9 +78,7 @@ test('kurultay join: one command configures hosts and seats the agents', async (
 }, 40000)
 
 test('an agent seated before playful names keeps its host@machine name', async () => {
-  const home = mkdtempSync(join(tmpdir(), 'kurultay-legacy-'))
-  process.env.HOME = home
-  process.env.KURULTAY_HOME = join(home, '.config/kurultay')
+  const home = freshHome('kurultay-legacy-')
   const g = owner.createGroup('legacy-council')
   const ticket = owner.createTicket([g.id])
   // same identity (inbox) as the ticket derives, but no agentSettings.name: what older versions wrote
@@ -85,27 +96,26 @@ test('two computers seating the same CLI from one ticket give it the same handle
   const g = owner.createGroup('two-machines')
   const ticket = owner.createTicket([g.id])
   const seatOn = async (machine: string) => {
-    const home = mkdtempSync(join(tmpdir(), `kurultay-${machine}-`))
-    process.env.HOME = home
-    process.env.KURULTAY_HOME = join(home, '.config/kurultay')
+    const home = freshHome(`kurultay-${machine}-`)
     process.env.KURULTAY_MACHINE = machine
     expect((await quiet([ticket, '--host', 'codex', '--no-background'])).code).toBe(0)
     return seatedName(home, 'codex')
   }
-  // one derived key on both machines: differing names would make each ask the admins to rename it back every minute
-  const [laptop, desktop] = [await seatOn('laptop'), await seatOn('desktop')]
-  expect(isPlayful(laptop)).toBe(true)
-  expect(desktop).toBe(laptop)
-  process.env.KURULTAY_MACHINE = 'testbox'
+  try {
+    // one derived key on both machines: differing names would make each ask the admins to rename it back every minute
+    const [laptop, desktop] = [await seatOn('laptop'), await seatOn('desktop')]
+    expect(isPlayful(laptop)).toBe(true)
+    expect(desktop).toBe(laptop)
+  } finally {
+    process.env.KURULTAY_MACHINE = 'testbox'
+  }
 }, 60000)
 
 test('a running session switches to the ticket identity, and the ticket host choice is honoured', async () => {
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
   const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js')
   const { createServer } = await import('../src/server')
-  const home = mkdtempSync(join(tmpdir(), 'kurultay-live-'))
-  process.env.HOME = home
-  process.env.KURULTAY_HOME = join(home, '.config/kurultay')
+  const home = freshHome('kurultay-live-')
   // session already running for pi, with its own (pre-ticket) identity
   const app = createServer({ relays: [relay.url], host: 'pi', noDaemon: true })
   const [a, b] = InMemoryTransport.createLinkedPair()

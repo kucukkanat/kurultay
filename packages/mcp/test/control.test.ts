@@ -25,6 +25,7 @@ const env = { ...process.env, HOME: home, KURULTAY_HOME: kHome, KURULTAY_NO_KEYC
 let daemon: ReturnType<typeof Bun.spawn> | undefined
 let owner: Kurultay
 let base = ''
+/** the page's token, from the last pair() */
 let token = ''
 
 const until = async (cond: () => unknown | Promise<unknown>, ms = 10_000) => {
@@ -57,6 +58,14 @@ const kurultay = async (...args: string[]) => {
   return { out, err, code }
 }
 
+/** A browser paired as the app does it, approved from a terminal. Tests that need one pair for themselves, in any order. */
+async function pair(): Promise<string> {
+  const req = await http('/pair/request', { body: {}, token: null })
+  expect((await kurultay('pair', String(req.json.code))).code).toBe(0)
+  token = String((await http(`/pair/poll?id=${req.json.id}`, { token: null })).json.token)
+  return token
+}
+
 const portFile = join(kHome, 'daemon.port')
 async function startDaemon() {
   daemon = Bun.spawn(['bun', cli, 'daemon'], { env, cwd: home, stdout: 'inherit', stderr: 'inherit' })
@@ -84,6 +93,8 @@ afterAll(async () => {
 })
 
 test('health answers the app with CORS, and refuses foreign hosts and origins', async () => {
+  // with no browser paired, whatever ran before
+  expect((await kurultay('pair', '--revoke')).code).toBe(0)
   const ok = await http('/health')
   expect(ok.json).toMatchObject({ app: 'kurultay', paired: false, paused: false })
   expect(ok.headers.get('access-control-allow-origin')).toBe(ORIGIN)
@@ -130,6 +141,7 @@ test('pairing: the page shows a code, only a terminal approves it, the page gets
 })
 
 test('folders can be browsed, without dotfiles', async () => {
+  await pair()
   const r = await http(`/fs/list?path=${encodeURIComponent(home)}`)
   expect(r.json).toMatchObject({ path: home })
   expect(r.json.dirs).toContain('project')
@@ -138,6 +150,7 @@ test('folders can be browsed, without dotfiles', async () => {
 })
 
 test('the app seats, moves, stops, starts and removes an agent', async () => {
+  await pair()
   const g = owner.createGroup('ops')
   const ticket = owner.createTicket([g.id], { hosts: ['codex'] })
   expect((await http('/seat', { body: { ticket, hosts: ['codex'], workdir: '/definitely/not/here' } })).status).toBe(400)
@@ -208,6 +221,8 @@ test('the app seats, moves, stops, starts and removes an agent', async () => {
 })
 
 test('kurultay pair --revoke signs every browser out', async () => {
+  await pair()
+  expect((await http('/state')).status).toBe(200)
   expect((await kurultay('pair', '--revoke')).code).toBe(0)
   expect((await http('/state')).status).toBe(401)
   expect((await http('/health')).json.paired).toBe(false)

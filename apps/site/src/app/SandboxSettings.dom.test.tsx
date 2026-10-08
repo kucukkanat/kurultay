@@ -1,7 +1,7 @@
 // Integration: an agent's sandbox panel rendered into happy-dom, talking to a real `kurultay daemon` this browser never
 // paired with: a change the panel sends is refused for real and must show up next to the switch (never silently).
 // Registered only for this file so the packages tests keep Bun's native fetch.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,13 +17,13 @@ beforeAll(async () => {
   const env = { ...process.env, HOME: home, KURULTAY_HOME: kHome, KURULTAY_NO_KEYCHAIN: '1', KURULTAY_RELAYS: 'ws://127.0.0.1:1', KURULTAY_PORT: '0' }
   daemon = Bun.spawn(['bun', cli, 'daemon'], { env, cwd: home, stdout: 'ignore', stderr: 'inherit' })
   for (let i = 0; i < 200 && !existsSync(join(kHome, 'daemon.port')); i++) await Bun.sleep(50)
-  GlobalRegistrator.register({ url: 'http://localhost:5173/app/' })
+  registerDom()
   localStorage.setItem('kurultay:daemon-port', readFileSync(join(kHome, 'daemon.port'), 'utf8').trim())
 })
 afterAll(async () => {
   daemon?.kill()
   localStorage.clear()
-  await GlobalRegistrator.unregister()
+  await unregisterDom()
 })
 
 const agent = (sandbox: DaemonAgentInfo['sandbox']): DaemonAgentInfo => ({ instance: 'codex#1', pubkey: 'ab', name: 'brisk-otter', host: 'codex', workdir: '/w', mode: 'edit', online: true, running: false, councils: [], groupIds: [], sandbox })

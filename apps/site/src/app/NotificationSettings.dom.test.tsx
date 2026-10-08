@@ -1,12 +1,12 @@
 // Integration: the settings section rendered into happy-dom, writing to this browser's real storage. Registered only for
 // this file so the packages tests keep Bun's native fetch and WebSocket.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 
-beforeAll(() => GlobalRegistrator.register({ url: 'http://localhost:5173/app/' }))
+beforeAll(() => registerDom())
 afterAll(async () => {
   localStorage.clear()
-  await GlobalRegistrator.unregister()
+  await unregisterDom()
 })
 
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => {

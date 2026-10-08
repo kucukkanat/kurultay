@@ -1,7 +1,7 @@
 // Integration: seating and managing agents from the page, in happy-dom, against a real `kurultay daemon`, a real relay
 // and a real owner engine. The page pairs through a real `kurultay pair`. Registered only for this file so the other
 // tests keep Bun's fetch; the owner engine keeps Bun's WebSocket, since happy-dom's is not a relay client.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -37,9 +37,7 @@ const until = async (cond: () => unknown, ms = 15_000) => {
 beforeAll(async () => {
   daemon = Bun.spawn(['bun', cli, 'daemon'], { env, cwd: home, stdout: 'ignore', stderr: 'inherit' })
   await until(() => existsSync(join(kHome, 'daemon.port')))
-  const NativeWebSocket = globalThis.WebSocket
-  GlobalRegistrator.register({ url: 'http://localhost:5173/app/' })
-  globalThis.WebSocket = NativeWebSocket
+  registerDom()
   localStorage.setItem('kurultay:daemon-port', readFileSync(join(kHome, 'daemon.port'), 'utf8').trim())
   owner = new Kurultay({ sk: newSecretKey(), name: 'tolga', kind: 'human', relays: [relay.url], storage: new MemoryStorage(), presenceInterval: 3_600_000 })
   await owner.start()
@@ -48,12 +46,11 @@ afterAll(async () => {
   daemon?.kill()
   await owner?.stop()
   relay.stop()
-  // toasts expire on a timer and repaint through requestAnimationFrame: let that happen while this window exists
+  // toasts expire on a timer that dies with this window: let them expire here, not linger into the next file
   const { toasts } = await import('./store')
   await until(() => !toasts.length, 8000).catch(() => {})
-  await new Promise((r) => requestAnimationFrame(r))
   localStorage.clear()
-  await GlobalRegistrator.unregister()
+  await unregisterDom()
 })
 
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T | null => document.querySelector<T>(`[data-testid="${id}"]`)

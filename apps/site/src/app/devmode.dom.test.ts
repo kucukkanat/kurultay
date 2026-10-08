@@ -1,10 +1,10 @@
 // Integration: real DOM events through happy-dom, registered only for this file so the packages tests keep Bun's
 // native fetch and WebSocket.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 
-beforeAll(() => GlobalRegistrator.register({ url: 'http://localhost:5173/app/' }))
-afterAll(() => GlobalRegistrator.unregister())
+beforeAll(() => registerDom())
+afterAll(() => unregisterDom())
 
 type Mods = Readonly<{ ctrlKey?: boolean; metaKey?: boolean }>
 const type = (target: EventTarget, text: string, mods: Mods = {}) => {

@@ -1,6 +1,6 @@
 // Integration: a real engine saving through BrowserStorage into happy-dom's localStorage. A busy board must never stop
 // the state (keys, councils) from being saved, and a failure to save must be said out loud.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { buildElements, getPublicKey, Kurultay, newSecretKey, type BoardElement } from '@kurultay/core'
 import { startTestRelay, type TestRelay } from '@kurultay/core/testing'
@@ -9,16 +9,14 @@ import { BOARD_STORE_CHARS, BrowserStorage } from './identity'
 let relay: TestRelay
 const engines: Kurultay[] = []
 beforeAll(() => {
-  // the engine talks to the relay over Bun's own WebSocket; happy-dom only lends its localStorage
-  const ws = globalThis.WebSocket
-  GlobalRegistrator.register({ url: 'http://localhost:5173/app/' })
-  globalThis.WebSocket = ws
+  // the engine talks to the relay over Bun's own WebSocket (registerDom keeps it); happy-dom only lends its localStorage
+  registerDom()
   relay = startTestRelay(0)
 })
 afterAll(async () => {
   await Promise.all(engines.map((e) => e.stop()))
   relay.stop()
-  await GlobalRegistrator.unregister()
+  await unregisterDom()
 })
 
 const until = async (cond: () => unknown, ms = 8000) => {

@@ -1,10 +1,10 @@
 // Integration: an artifact block rendered into happy-dom and run, to pin down the frame's sandbox and what it may tell the page.
 // Registered only for this file so the packages tests keep Bun's native fetch and WebSocket.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test'
 
-beforeAll(() => GlobalRegistrator.register({ url: 'http://localhost:5173/app/' }))
-afterAll(() => GlobalRegistrator.unregister())
+beforeAll(() => registerDom())
+afterAll(() => unregisterDom())
 afterEach(async () => (await import('preact')).render(null, document.body))
 
 const settle = () => new Promise((r) => setTimeout(r, 20))

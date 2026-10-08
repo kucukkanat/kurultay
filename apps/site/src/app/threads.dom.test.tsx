@@ -1,17 +1,19 @@
 // Integration: the thread link and panel rendered into happy-dom, driving a real (offline) engine. Registered only for this
 // file so the packages tests keep Bun's native fetch and WebSocket.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { registerDom, unregisterDom } from './dom-env'
+import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { Kurultay, MemoryStorage, newSecretKey, type Message } from '@kurultay/core'
 import { startTestRelay } from '@kurultay/core/testing'
 
 // a local relay, so the engine never reaches for the public defaults
 const relay = startTestRelay(0)
 const engines: Kurultay[] = []
-beforeAll(() => GlobalRegistrator.register({ url: 'http://localhost:5173/app/' }))
-afterAll(() => {
+beforeAll(() => registerDom())
+// what threads were seen lives in localStorage: every test starts from a browser that has seen none
+beforeEach(() => localStorage.clear())
+afterAll(async () => {
   engines.forEach((e) => e.pool.close())
-  GlobalRegistrator.unregister()
+  await unregisterDom()
   relay.stop()
 })
 

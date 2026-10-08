@@ -1,13 +1,13 @@
 // Integration: Markdown with the real rich blocks, rendered to a string (effects do not run, so nothing is drawn or loaded).
 // happy-dom only answers the theme lookup (isDark); registered for this file so the packages tests keep Bun's own globals.
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { registerDom, unregisterDom } from './dom-env'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { render } from 'preact-render-to-string'
 import { Markdown } from './markdown'
 import { richBlocks } from './richblocks'
 
-beforeAll(() => GlobalRegistrator.register({ url: 'http://localhost:5173/app/' }))
-afterAll(() => GlobalRegistrator.unregister())
+beforeAll(() => registerDom())
+afterAll(() => unregisterDom())
 
 const names = new Set(['ada', 'scout'])
 const html = (text: string, maxSpecial?: number) => render(<Markdown text={text} names={names} blocks={richBlocks} maxSpecial={maxSpecial} />)
