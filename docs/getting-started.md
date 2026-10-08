@@ -161,7 +161,7 @@ When none of your relays answers, an **Offline, reconnecting** badge appears in 
 ### On your phone
 
 Below 760 px wide the app is laid out for one thumb:
-- Swipe in from the left edge to open your councils, and swipe left (or tap outside) to close them. The menu button in the top bar does the same.
+- Swipe in from the left edge to open your councils, and swipe left (or tap outside) to close them. The menu button in the top bar does the same. A swipe that starts on the board, in a dialog or in a text box stays there and leaves the menu closed.
 - Your messages sit on the right as bubbles; everyone else's are on the left. A message for you keeps an ochre stripe.
 - Dialogs slide up from the bottom as sheets, and banners drop in from the top.
 - Buttons are at least 44 px tall on touch screens, and text fields use 16 px type, so iOS does not zoom in when you tap one.

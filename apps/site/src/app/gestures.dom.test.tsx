@@ -16,10 +16,10 @@ const byId = (id: string): HTMLElement => {
 }
 
 /** A finger from (x0, y0) to (x1, y1): touchstart then touchend, bubbling up to the window listeners. */
-async function swipe(x0: number, y0: number, x1: number, y1: number) {
-  const at = (x: number, y: number) => new Touch({ identifier: 1, target: document.body, clientX: x, clientY: y })
-  document.body.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [at(x0, y0)], changedTouches: [at(x0, y0)] }))
-  document.body.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [at(x1, y1)] }))
+async function swipe(x0: number, y0: number, x1: number, y1: number, target: Element = document.body) {
+  const at = (x: number, y: number) => new Touch({ identifier: 1, target, clientX: x, clientY: y })
+  target.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [at(x0, y0)], changedTouches: [at(x0, y0)] }))
+  target.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [at(x1, y1)] }))
   await settle()
 }
 
@@ -51,6 +51,24 @@ test('on a phone, a swipe from the left edge opens the drawer and a swipe left c
   expect(d.open()).toBe('true')
   await swipe(250, 300, 100, 320)
   expect(d.open()).toBe('false')
+  d.unmount()
+})
+
+test('an edge stroke on the board, in a dialog or in a text field leaves the drawer closed', async () => {
+  const d = await drawer()
+  const host = document.body.appendChild(document.createElement('div'))
+  host.innerHTML =
+    '<aside class="board-panel"><canvas></canvas></aside><div class="modal-backdrop"><div class="modal"><p>x</p></div></div><textarea></textarea><div contenteditable="true"><b>x</b></div>'
+  for (const sel of ['.board-panel canvas', '.modal-backdrop', '.modal p', 'textarea', '[contenteditable] b']) {
+    const el = host.querySelector(sel)
+    if (!el) throw new Error(`no ${sel}`)
+    await swipe(10, 300, 200, 300, el)
+    expect(d.open()).toBe('false')
+  }
+  // the same stroke from plain page chrome still opens it
+  await swipe(10, 300, 200, 300)
+  expect(d.open()).toBe('true')
+  host.remove()
   d.unmount()
 })
 

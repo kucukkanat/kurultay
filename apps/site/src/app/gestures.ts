@@ -12,6 +12,13 @@ export const isDrawerSwipe = (dx: number, dy: number, dir: DrawerDir): boolean =
 /** Whether a touch starting at x may become a drawer swipe: phones only, from the left edge, or anywhere to close it. */
 export const drawerStart = (x: number, open: boolean, narrow: boolean): boolean => narrow && (open || x <= DRAWER.edge)
 
+/**
+ * Touches that start here belong to something else: the board draws with the finger, a dialog or sheet sits above the nav,
+ * and a text field selects text. An edge stroke there must not also slide the drawer in.
+ */
+export const NO_SWIPE = '.board-panel, .modal-backdrop, textarea, input, [contenteditable]'
+const owned = (target: EventTarget | null): boolean => target instanceof Element && target.closest(NO_SWIPE) !== null
+
 /** The first touch, typed as possibly missing: TouchList's index signature claims a Touch even when the list is empty. */
 const first = (list: TouchList): Touch | undefined => list[0]
 
@@ -26,7 +33,7 @@ export function useDrawerSwipe(open: boolean, setOpen: (open: boolean) => void):
     let start: { x: number; y: number } | null = null
     const onStart = (ev: TouchEvent) => {
       const t = first(ev.touches)
-      start = t && drawerStart(t.clientX, open, narrow.matches) ? { x: t.clientX, y: t.clientY } : null
+      start = t && !owned(ev.target) && drawerStart(t.clientX, open, narrow.matches) ? { x: t.clientX, y: t.clientY } : null
     }
     const onEnd = (ev: TouchEvent) => {
       const t = first(ev.changedTouches)

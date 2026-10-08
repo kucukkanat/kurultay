@@ -55,6 +55,15 @@ test('on a phone, my messages sit right, dialogs are sheets and toasts clear the
   expect(app).toContain('@keyframes sheet-in')
 })
 
+test('edge-pinned drawers and the full-screen board clear the notch, status bar and home indicator', () => {
+  const drawers = block(app.slice(app.indexOf('the members, thread and board drawers are pinned')), '(max-width: 1100px)')
+  expect(drawers).toMatch(/\.members,\s*\.board-panel \{\s*padding-top: var\(--safe-top\);\s*padding-right: var\(--safe-right\)/)
+  expect(drawers).toMatch(/\.board-panel \{\s*padding-bottom: var\(--safe-bottom\)/)
+  expect(app).toMatch(/\.board-panel\.full \{\s*padding: var\(--safe-top\) var\(--safe-right\) var\(--safe-bottom\) var\(--safe-left\)/)
+  // the thread panel is a .members drawer whose own composer padding would otherwise drop the home-indicator inset
+  expect(app).toMatch(/\.thread-panel \.composer \{\s*padding: 0 var\(--s-3\) calc\(var\(--s-3\) \+ var\(--safe-bottom\)\)/)
+})
+
 test('both pages let the layout run edge to edge under the notch', async () => {
   for (const page of ['../../index.html', '../../app/index.html']) expect(await read(page)).toContain('viewport-fit=cover')
 })
