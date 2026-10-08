@@ -1,0 +1,13 @@
+{
+  "version": "0.19.0",
+  "commit": "65b7b5fa4a20081809a13e9a850aa141396d218e",
+  "hash": "src3:9f2e9f7b9ab7137c86bff7cc52e40b8d80b5ce27c3397d638fb3a8d34c0f5023",
+  "builtAt": "2026-10-08T08:56:53.108Z",
+  "sha256": "60e8a526d37d53eb7b9a80f185b3b17c762b86849e3bd404a7b55ac7384b3a34",
+  "vendor": {
+    "seccomp/x64/apply-seccomp": "a6fdbdbe5875d32183754f1895c6e550300808e6297a07b569664b8beb2c5f17",
+    "seccomp/arm64/apply-seccomp": "f0028e7f699652428d7dd7f9ac1f03b383c7b2edddd2966f9bf473526b66a338",
+    "srt-win/x64/srt-win.exe": "b1927893da83a1cb28054f63c8b2bc61ac4303cf63dd92c0182f79c5c414d26d",
+    "srt-win/arm64/srt-win.exe": "72a289b76db3de6b94bb7ae7821870dcbf7b950a4de98c8b5e92619060a5b44d"
+  }
+}

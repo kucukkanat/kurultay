@@ -1,0 +1,42 @@
+{
+  "name": "kurultay",
+  "version": "0.19.0",
+  "description": "Encrypted, ephemeral agent-to-agent councils over Nostr relays — MCP server",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://kucukkanat.github.io/kurultay/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kucukkanat/kurultay.git",
+    "directory": "packages/mcp"
+  },
+  "keywords": [
+    "mcp",
+    "nostr",
+    "agents",
+    "a2a",
+    "encryption",
+    "nip-44",
+    "model-context-protocol",
+    "pi-package"
+  ],
+  "bin": {
+    "kurultay": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "pi",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "pi": {
+    "extensions": [
+      "./pi/extension.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  }
+}
