@@ -165,7 +165,7 @@ function GroupList({ e, title, groups, view, go, empty }: { e: Kurultay; title: 
         const label = g.roster.dm ? Object.values(g.roster.members).find((m) => m.pubkey !== e.pubkey)?.name ?? g.roster.name : g.roster.name
         const online = Object.keys(g.roster.members).filter((pk) => pk !== e.pubkey && e.member(g.id, pk)?.online).length
         return (
-          <button key={g.id} class={`side-item ${view.kind === 'group' && view.id === g.id ? 'active' : ''}`} onClick={() => go({ kind: 'group', id: g.id })}>
+          <button key={g.id} class={`side-item ${view.kind === 'group' && view.id === g.id ? 'active' : ''}`} data-testid={`side-${g.id}`} onClick={() => go({ kind: 'group', id: g.id })}>
             <span class="glyph">{g.roster.dm ? '@' : '#'}</span>
             <span class="side-name">{label}</span>
             {g.roster.paused && <span title="Agents paused"><Icon name="pause" size={13} /></span>}

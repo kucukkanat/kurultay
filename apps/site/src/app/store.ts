@@ -47,6 +47,8 @@ export interface Toast {
 export const toasts: Toast[] = []
 
 let engine: Kurultay | null = null
+/** Aborting it removes the page listeners and the refresh timer that startEngine set up. */
+let page = new AbortController()
 let failedRelays: FailedRelays = new Set()
 let version = 0
 const subs = new Set<() => void>()
@@ -78,7 +80,8 @@ export const typingMap: Record<string, Record<string, number>> = {}
 
 export function dismissToast(id: number) {
   const i = toasts.findIndex((t) => t.id === id)
-  if (i >= 0) toasts.splice(i, 1)
+  if (i < 0) return // already gone (tapped before its timer ran out): nothing to repaint
+  toasts.splice(i, 1)
   bump()
 }
 
@@ -94,7 +97,10 @@ export function toast(text: string, level: Toast['level'] = 'info', groupId?: st
 let openGroupId: string | null = null
 /** The council on screen, set by the shell; together with visibility and focus it decides what counts as read. */
 export function setOpenGroup(id: string | null) {
+  if (id === openGroupId) return
   openGroupId = id
+  // the council just opened stops counting as unread: refresh the tab title and icon now, not at the next message
+  bump()
 }
 /** The person is looking at this council right now: it is open, the tab is visible and the window has focus. */
 export function isAttending(groupId: string): boolean {
@@ -196,8 +202,9 @@ export async function startEngine(id: Unlocked) {
     alertFor(e, groupId, message, forMe)
   })
   // coming back to the tab or window is what marks the open council read, so re-render on it
-  for (const ev of ['focus', 'blur'] as const) addEventListener(ev, bump)
-  document.addEventListener('visibilitychange', bump)
+  const { signal } = (page = new AbortController())
+  for (const ev of ['focus', 'blur'] as const) addEventListener(ev, bump, { signal })
+  document.addEventListener('visibilitychange', bump, { signal })
   // autoplay policy: audio stays locked until a gesture, so the first tap or key press unlocks it
   const unlock = () => {
     if (!getPrefs().sound) return
@@ -207,15 +214,23 @@ export async function startEngine(id: Unlocked) {
       removeEventListener('keydown', unlock, true)
     })
   }
-  addEventListener('pointerdown', unlock, true)
-  addEventListener('keydown', unlock, true)
+  addEventListener('pointerdown', unlock, { capture: true, signal })
+  addEventListener('keydown', unlock, { capture: true, signal })
   engine.on('notice', (n) => toast(n.text, n.level))
   engine.on('approval', (a) => toast(a.kind === 'agent-join' ? `${a.requester.name} asks to join “${a.groupName}”` : `${a.requester.name} wants to join “${a.groupName}”`))
   await engine.start()
   ;(window as any).kurultay = engine // for the console / developer mode
-  setInterval(bump, 15_000) // refresh presence and countdowns
+  const refresh = setInterval(bump, 15_000) // refresh presence and countdowns
+  signal.addEventListener('abort', () => clearInterval(refresh))
   bump()
   return engine
+}
+
+/** Undo startEngine. The app reloads instead (locking does); tests need it so nothing outlives their page. */
+export async function stopEngine() {
+  page.abort()
+  await engine?.stop()
+  engine = null
 }
 
 /** 'down' when no relay of the current pool answers; drives the top-bar offline badge. */
